@@ -1,0 +1,56 @@
+buildscript {
+	ext {
+		springBootVersion = '1.5.3.RELEASE'
+	}
+	repositories {
+		mavenCentral()
+	}
+	dependencies {
+		classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
+	}
+}
+
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'maven'
+apply plugin: 'application'
+apply plugin: 'org.springframework.boot'
+
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = 1.8
+
+repositories {
+    mavenLocal()
+	mavenCentral()
+    jcenter()
+}
+
+mainClassName = "org.lendingclub.trident.Main"
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '3.5'
+}
+    configurations {
+		all*.exclude group: 'commons-logging', module: 'commons-logging'
+
+    	all*.exclude group: 'log4j'
+    	all*.exclude group: 'xml-apis'
+
+        all*.exclude group: 'org.springframework.boot', module:'spring-boot-cli'
+
+		provided
+    }
+    
+dependencies {
+	compile('org.springframework.boot:spring-boot-starter-security')
+	compile('org.springframework.boot:spring-boot-starter-web')
+    compile 'org.slf4j:jcl-over-slf4j:1.7.25'
+    compile 'org.jtwig:jtwig-spring-boot-starter:5.85.3.RELEASE'
+    compile "org.lendingclub.mercator:mercator-docker:1.5.3"
+    compile 'com.amazonaws:aws-java-sdk-s3:1.11.123'
+    compile 'com.amazonaws:aws-java-sdk-ec2:1.11.123'
+    
+    compile 'com.github.docker-java:docker-java:3.0.9'
+    compile 'ch.qos.logback:logback-classic:1.2.2'
+	testCompile('org.springframework.boot:spring-boot-starter-test')
+}
