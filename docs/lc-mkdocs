@@ -1,0 +1,26 @@
+#!/bin/bash
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# build docs into the site directory
+cd $SCRIPT_DIR
+./mkdocs-build || exit 1
+
+TARGET_DIR=${SCRIPT_DIR}/../../../docs/trident
+mkdir $TARGET_DIR
+cd $TARGET_DIR || exit 1
+TARGET_DIR=$(pwd)
+cd $SCRIPT_DIR
+
+mkdir -p ${TRIDENT_DIR}
+
+cp -vR site/ $TARGET_DIR/
+
+cd $TARGET_DIR
+
+echo
+echo
+echo You can now browse docs: $TARGET_DIR/index.html
+echo
+
+

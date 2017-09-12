@@ -2,6 +2,9 @@
 /build/
 !gradle/wrapper/gradle-wrapper.jar
 bin/
+*.jar
+src/main/docker/trident/lib/
+
 ### STS ###
 .apt_generated
 .classpath

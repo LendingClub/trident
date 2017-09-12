@@ -1,0 +1,21 @@
+
+## Template: {{templateName}}
+
+set -x
+
+exec 2>&1 >>/var/log/trident.log
+
+
+export TRIDENT_DATA_DIR=/var/lib/trident
+export NEXT_SCRIPT=${TRIDENT_DATA_DIR}/script_{{requestId}}.sh
+mkdir -p ${TRIDENT_DATA_DIR}
+
+if [ -f /etc/trident.conf ]; then
+  . /etc/trident.conf
+fi
+
+
+{{exportedVariablesBlock}}
+
+AWS_INSTANCE_ID=$(curl --noproxy 169.254.169.254 http://169.254.169.254/latest/meta-data/instance-id )
+IP_ADDR=$(ifconfig eth0 | grep "inet " | awk '{ print $2 }')

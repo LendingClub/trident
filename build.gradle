@@ -3,54 +3,92 @@ buildscript {
 		springBootVersion = '1.5.3.RELEASE'
 	}
 	repositories {
+        mavenLocal()
+        jcenter()
 		mavenCentral()
 	}
 	dependencies {
 		classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
+     //   classpath 'com.github.jengelman.gradle.plugins:shadow:2.0.1'
 	}
 }
-
+plugins {
+    //id "com.github.hierynomus.license" version "0.11.0"
+    id 'org.springframework.boot' version '1.5.6.RELEASE'
+}
 apply plugin: 'java'
 apply plugin: 'eclipse'
 apply plugin: 'maven'
 apply plugin: 'application'
-apply plugin: 'org.springframework.boot'
+//apply plugin: 'com.github.johnrengelman.shadow'
 
-version = '0.0.1-SNAPSHOT'
+
+group 'org.lendingclub.trident'
+version = "${TRIDENT_VERSION}"
 sourceCompatibility = 1.8
 
 repositories {
     mavenLocal()
-	mavenCentral()
+    mavenCentral()
     jcenter()
 }
 
 mainClassName = "org.lendingclub.trident.Main"
 
 task wrapper(type: Wrapper) {
-    gradleVersion = '3.5'
+    gradleVersion = "${GRADLE_VERSION}"
 }
     configurations {
-		all*.exclude group: 'commons-logging', module: 'commons-logging'
+        all*.exclude group: 'commons-logging', module: 'commons-logging'
 
-    	all*.exclude group: 'log4j'
-    	all*.exclude group: 'xml-apis'
+        all*.exclude group: 'log4j'
+        all*.exclude group: 'xml-apis'
 
         all*.exclude group: 'org.springframework.boot', module:'spring-boot-cli'
 
-		provided
+        provided
+    }
+    
+    task dockerBuild(type: Exec) {
+        workingDir "src/main/docker"
+        commandLine "/bin/bash", "build-image.sh"
+    }
+    assemble.doLast() {
+        tasks.dockerBuild.execute()
     }
     
 dependencies {
-	compile('org.springframework.boot:spring-boot-starter-security')
-	compile('org.springframework.boot:spring-boot-starter-web')
-    compile 'org.slf4j:jcl-over-slf4j:1.7.25'
-    compile 'org.jtwig:jtwig-spring-boot-starter:5.85.3.RELEASE'
-    compile "org.lendingclub.mercator:mercator-docker:1.5.3"
-    compile 'com.amazonaws:aws-java-sdk-s3:1.11.123'
-    compile 'com.amazonaws:aws-java-sdk-ec2:1.11.123'
+	compile("org.springframework.boot:spring-boot-starter-security:${SPRING_BOOT_VERSION}")
+	compile("org.springframework.boot:spring-boot-starter-web:$SPRING_BOOT_VERSION")
+	compile("org.springframework.boot:spring-boot-starter-mustache:$SPRING_BOOT_VERSION")
+
+    compile "org.bouncycastle:bcprov-jdk15on:${BOUNCYCASTLE_VERSION}"
+    compile "org.bouncycastle:bcpkix-jdk15on:${BOUNCYCASTLE_VERSION}"
     
-    compile 'com.github.docker-java:docker-java:3.0.9'
+    compile 'com.fasterxml.uuid:java-uuid-generator:3.1.4'
+    compile "net.jodah:failsafe:${FAILSAFE_VERSION}"
+    compile 'org.ocpsoft.prettytime:prettytime:4.0.1.Final'
+    compile 'org.rapidoid:rapidoid-essentials:5.3.4'
+    compile 'org.slf4j:jcl-over-slf4j:1.7.25'
+    compile "org.lendingclub.mercator:mercator-docker:${MERCATOR_VERSION}"
+    compile "org.lendingclub.mercator:mercator-aws:${MERCATOR_VERSION}"
+    compile "org.webjars.bower:gentelella:1.4.0"
+    compile 'org.webjars:webjars-locator:0.32-1'
+    compile "com.amazonaws:aws-java-sdk-s3:${AWS_SDK_VERSION}"
+    compile "com.amazonaws:aws-java-sdk-ec2:${AWS_SDK_VERSION}"
+    compile "com.amazonaws:aws-java-sdk-autoscaling:${AWS_SDK_VERSION}"
+    compile "com.amazonaws:aws-java-sdk-sts:${AWS_SDK_VERSION}"
+    compile "com.amazonaws:aws-java-sdk-cloudformation:${AWS_SDK_VERSION}"
+    compile 'it.sauronsoftware.cron4j:cron4j:2.2.5'
+    compile 'org.apache.ignite:ignite-core:2.0.0'
     compile 'ch.qos.logback:logback-classic:1.2.2'
-	testCompile('org.springframework.boot:spring-boot-starter-test')
+    compile "io.springfox:springfox-swagger2:2.6.1"
+    compile "io.springfox:springfox-swagger-ui:2.6.1"
+    compile 'net.lingala.zip4j:zip4j:1.3.2'
+    compile "org.lendingclub:reflex:${REFLEX_VERSION}"
+    compile "io.macgyver.okrest3:okrest:${OKREST_VERSION}"
+    testCompile 'junit:junit:4.12'
+    testCompile 'org.assertj:assertj-core:3.6.2'
+    testCompile "org.springframework.boot:spring-boot-starter-test:${SPRING_BOOT_VERSION}"
+	testCompile 'com.google.googlejavaformat:google-java-format:1.4'
 }

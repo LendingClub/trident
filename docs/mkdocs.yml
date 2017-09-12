@@ -1,0 +1,13 @@
+site_name: Trident
+pages:
+    - Home: index.md
+    - Getting Started: getting-started.md
+    - Architecture: architecture.md
+    - Envoy: envoy.md
+    - Data Model: data-model.md
+    - FAQ: faq.md
+theme: readthedocs
+    
+    
+
+ 

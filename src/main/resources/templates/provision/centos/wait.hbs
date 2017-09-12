@@ -1,0 +1,19 @@
+#!/bin/bash
+
+{{>script-include}}
+
+
+ # sleep and then call back
+ sleep 15
+ 
+curl -s -f -k -X POST {{tridentBaseUrl}}/api/trident/provision/{{operation}} \
+ -F ipAddr=${IP_ADDR} \
+ -F id={{id}} \
+ -F nodeType={{nodeType}} \
+ -F awsInstanceId=${AWS_INSTANCE_ID} \
+   >${NEXT_SCRIPT} || exit 99
+ 
+
+ exec /bin/bash -x ${NEXT_SCRIPT}
+ 
+ 

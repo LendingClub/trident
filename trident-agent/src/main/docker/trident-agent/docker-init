@@ -1,0 +1,4 @@
+#!/bin/sh
+
+cd /trident-agent
+exec java -jar ./trident-agent-all.jar

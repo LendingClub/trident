@@ -1,0 +1,16 @@
+#!/bin/bash 
+
+{{>script-include}}
+
+curl -s -f -k -X POST \
+  {{tridentBaseUrl}}/api/trident/provision/docker-install \
+  -F ipAddr=${IP_ADDR} \
+  -F id={{id}} \
+  -F awsInstanceId=${AWS_INSTANCE_ID} \
+  -F nodeType={{nodeType}} \
+  >${NEXT_SCRIPT} || exit 99
+  
+ exec /bin/bash -x ${NEXT_SCRIPT}
+
+
+

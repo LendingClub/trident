@@ -1,0 +1,96 @@
+#!/bin/bash
+
+export ENVOY_HOME=${ENVOY_HOME-"/envoy"}
+export ENVOY_CFG=${ENVOY_HOME}/config/envoy.cfg
+export TSD_URL=${TSD_URL-""}
+
+export TSD_ZONE=${TSD_ZONE-""}
+export TSD_GROUP=${TSD_GROUP-""}
+export TSD_NODE=$(hostname -s)
+export TSD_ENV=${TSD_ENV-""}
+export TSD_SUB_ENV=${TSD_SUB_ENV-"default"}
+
+if [ "$TSD_URL" = "" ]; then
+    echo "ERROR: TSD_URL not set -- EXAMPLE: -e TSD_URL=https://trident.example.com"
+    exit 99
+fi
+
+if [ "$TSD_GROUP" = "" ]; then
+    echo "ERROR: TSD_GROUP not set -- EXAMPLE: -e TSD_GROUP=services"
+    exit 99
+fi
+
+if [ "$TSD_ZONE" = "" ]; then
+    echo "ERROR: TSD_ZONE not set -- EXAMPLE: -e TSD_ZONE=us-west-2"
+    exit 99
+fi
+
+if [ "$TSD_ENV" = "" ]; then
+    echo "ERROR: TSD_ENV not set -- EXAMPLE: -e TSD_ENV=test"
+    exit 99
+fi
+
+
+if [ "$TSD_CLUSTER" = "" ]; then
+export TSD_CLUSTER=${TSD_ZONE}--${TSD_ENV}--${TSD_SUB_ENV}--${TSD_GROUP}
+fi
+export ENVOY_CFG_URL=${TSD_URL}/api/trident/envoy/config/${TSD_CLUSTER}/${TSD_NODE}
+
+cat <<EOF
+
+ENVOY_HOME    : ${ENVOY_HOME} 
+ENVOY_CFG     : ${ENVOY_CFG}
+TSD_ENV       : ${TSD_ENV}
+TSD_SUB_ENV   : ${TSD_SUB_ENV}
+TSD_GROUP     : ${TSD_GROUP}
+TSD_CLUSTER   : ${TSD_CLUSTER}
+TSD_NODE      : ${TSD_NODE}
+TSD_ZONE      : ${TSD_ZONE}
+TSD_URL       : ${TSD_URL}
+
+
+Discovery URLs
+---------------
+Config URL              : ${ENVOY_CFG_URL}
+Unified Config          : ${TSD_URL}/api/trident/envoy/unified-config/${TSD_CLUSTER}/${TSD_NODE}
+Listener Discovery URL  : ${TSD_URL}/api/trident/envoy/v1/listeners/${TSD_CLUSTER}/${TSD_NODE}
+Route Discovery URL *   : ${TSD_URL}/api/trident/envoy/v1/routes/<ROUTE_CONFIG_NAME>/${TSD_CLUSTER}/${TSD_NODE}
+Cluster Discovery URL   : ${TSD_URL}/api/trident/envoy/v1/clusters/${TSD_CLUSTER}/${TSD_NODE}
+Service Discovery URL * : ${TSD_URL}/api/trident/envoy/v1/registration/<SERVICE_NAME>
+
+NOTE: RDS and SDS URLs are specific to listeners and clusters respectively
+EOF
+
+
+
+
+mkdir -p ${ENVOY_HOME}/config
+mkdir -p ${ENVOY_HOME}/logs
+
+echo
+echo fetching ${ENVOY_CFG_URL} to ${ENVOY_CFG}
+curl --fail --silent ${ENVOY_CFG_URL} >${ENVOY_CFG} 
+
+if [ $? -ne 0 ]; then
+    echo failed to fetch envoy config
+    exit 99
+fi
+
+echo 
+
+cat ${ENVOY_CFG}  
+echo
+echo "================="
+echo
+
+nohup ${ENVOY_HOME}/hot-restarter.py ${ENVOY_HOME}/start-envoy.sh 2>&1 >${ENVOY_HOME}/logs/envoy.log &
+
+sleep 5
+
+tail -f $ENVOY_HOME/logs/envoy.log &
+
+ENVOY_PROCESS_COUNT=1
+while [ $ENVOY_PROCESS_COUNT -gt 0 ]; do
+    ENVOY_PROCESS_COUNT=$(ps -ef | grep envoy | grep 'envoy.cfg' | grep -v grep | wc -l)
+    sleep 5
+done

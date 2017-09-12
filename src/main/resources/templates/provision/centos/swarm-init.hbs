@@ -1,0 +1,46 @@
+#!/bin/bash
+
+{{>script-include}}
+
+# tracing off
+set +x
+docker swarm init 
+
+# tracing on
+set -x
+
+# Immediately put the manager into draining state
+docker node update --availability drain $(docker node ls | grep '*' | awk '{ print $1 }')
+
+
+# tracing off
+set +x
+
+WORKER_TOKEN_OUTPUT=$(docker swarm join-token worker  | base64 -w 0)
+MANAGER_TOKEN_OUTPUT=$(docker swarm join-token manager | base64 -w 0)
+
+# tracing on
+set -x
+
+
+SWARM_CLUSTER_ID=$(docker info 2>/dev/null | grep ClusterID | awk '{ print $2 } ')
+SWARM_NODE_ID=$(docker info 2>/dev/null | grep NodeID | awk  '{print $2 }')
+
+# tracing off
+set +x
+curl -s -f -k -X POST {{tridentBaseUrl}}/api/trident/provision/swarm-initialized \
+ -F ipAddr=${IP_ADDR} \
+ -F id={{id}} \
+ -F "workerTokenOutput=$WORKER_TOKEN_OUTPUT" \
+ -F "managerTokenOutput=${MANAGER_TOKEN_OUTPUT}" \
+ -F awsInstanceId=${AWS_INSTANCE_ID} \
+ -F nodeType={{nodeType}} \
+ -F swarmClusterId=${SWARM_CLUSTER_ID} \
+ -F swarmNodeId=${SWARM_NODE_ID} \
+   >${NEXT_SCRIPT} || exit 99
+
+# tracing on
+set -x   
+  
+  
+ exec /bin/bash -x ${NEXT_SCRIPT}

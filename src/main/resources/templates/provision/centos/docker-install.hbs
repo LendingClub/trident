@@ -1,0 +1,101 @@
+#!/bin/bash
+
+
+{{>script-include}}
+
+## Some AWS-specific setup.  If /dev/xvdh is available, go ahead and format and mount it at /var/lib/docker
+## We might want to have a more advanced way of passing block device config in here.
+
+lsblk /dev/sdh
+if [ "$?" = "0" ]; then
+	EBS_DEVICE=/dev/sdh
+fi
+
+lsblk /dev/xvdh
+if [ "$?" = "0" ]; then
+	EBS_DEVICE=/dev/xvdh
+fi
+
+if [ ! "$EBS_DEVICE" = "" ]; then
+
+mkfs.xfs -f -n ftype=1 ${EBS_DEVICE}
+mkdir -p /var/lib/docker
+cat <<EOF >>/etc/fstab
+${EBS_DEVICE}   /var/lib/docker    xfs defaults 0 0
+EOF
+mount /var/lib/docker
+fi
+## End AWS-specific setup
+
+yum install -y yum-utils unzip
+
+yum-config-manager --enable extras
+yum-config-manager --add-repo {{dockerRepoUrl}}
+
+
+yum makecache fast
+
+yum install -y {{dockerPackages}}
+
+if [ "${HTTP_PROXY}" = "" ]; then
+  echo "no proxy"
+else
+
+mkdir -p /etc/systemd/system/docker.service.d
+cat <<EOF > /etc/systemd/system/docker.service.d/http-proxy.conf
+[Service]
+Environment="HTTP_PROXY=${HTTP_PROXY}"
+Environment="HTTPS_PROXY=${HTTPS_PROXY}"
+Environment="no_proxy=${NO_PROXY}"
+EOF
+fi
+
+
+# Swarm nodes have no remote access enabled by default.  We will 
+# need to secure this with mutual TLS.  But this is enough to get going.
+
+
+mkdir -p /etc/docker
+mkdir -p /etc/docker/trident/tls
+mkdir -p /root/.docker
+
+cd /etc/docker/trident/tls
+
+curl -s -k -X POST {{tridentBaseUrl}}/api/trident/provision/server-certs -o /etc/docker/trident/tls/certs.zip \
+-F tridentClusterId=$id \
+-F ipAddr=${IP_ADDR}
+
+unzip certs.zip
+cp /etc/docker/trident/tls/*.pem /root/.docker
+
+
+if [ -z "$DOCKER_REGISTRY_MIRROR"  ]; then
+  REGISTRY_MIRROR_TUPLE=""
+else
+  REGISTRY_MIRROR_TUPLE='"registry-mirrors":["'$DOCKER_REGISTRY_MIRROR'"],'
+fi
+
+cat <<EOF >/etc/docker/daemon.json
+{
+  $REGISTRY_MIRROR_TUPLE
+  "hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2376"],
+  "tlsverify":true,
+  "tlscert":"/etc/docker/trident/tls/cert.pem",
+  "tlskey":"/etc/docker/trident/tls/key.pem",
+  "tlscacert":"/etc/docker/trident/tls/ca.pem"
+}
+EOF
+cat /etc/docker/daemon.json
+
+
+systemctl start docker.service
+systemctl enable docker.service
+
+curl -s -f -k -X POST {{tridentBaseUrl}}/api/trident/provision/swarm-join \
+-F ipAddr=${IP_ADDR} \
+-F id={{id}} \
+-F nodeType={{nodeType}} \
+-F awsInstanceId=${AWS_INSTANCE_ID} \
+  >${NEXT_SCRIPT} || exit 99
+  
+exec /bin/bash -x ${NEXT_SCRIPT}
