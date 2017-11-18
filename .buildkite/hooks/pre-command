@@ -3,6 +3,7 @@
 
 
 docker kill neo4j
+docker rm neo4j
 
 
 docker run -d \
