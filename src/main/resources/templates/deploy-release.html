@@ -1,0 +1,96 @@
+
+{{>header}}
+<!-- page content -->
+<div class="right_col" role="main">
+  <div class="">
+    <div class="page-title">
+      <div class="title_left">
+        <h3>New Release</h3>
+      </div>
+    </div>
+    <div class="clearfix"></div>
+    {{#message}}
+    <div class="alert alert-{{label}}" style="display:{{displayMessage}}">
+       <ul class="fa-ul">
+          <li> <i class="fa fa-info-circle fa-lg fa-li"></i>{{message}}</li>
+       </ul>
+    </div>
+    {{/message}}
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="x_panel">
+          <div class="x_title">
+           <h2>Create New Release</h2>
+           <div class="clearfix"></div>
+          </div>
+          <div class="x_content"> 
+             <div class="cluster-release-form" id="cluster-release-form-div">
+                <form class="form-horizontal form-label-left" name="create-release-form" id="create-release-form" action="/app-clusters/{{appClusterId}}/createrelease" method="POST">
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="image">
+                       Image
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <input id="image" name="image" class="form-control col-md-7 col-xs-12" value="{{image}}">
+                    </div>
+                  </div>
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="port">
+                       Port 
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <input id="port" name="port" class="form-control col-md-7 col-xs-12" value="{{port}}">
+                    </div>
+                  </div>
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="path">
+                       Path 
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <input id="path" name="path" class="form-control col-md-7 col-xs-12" value="{{path}}">
+                    </div>
+                  </div> 
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="args">
+                       Arguments 
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <input id="args" name="args" class="form-control col-md-7 col-xs-12" value="{{args}}">
+                    </div>
+                  </div>
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="branch">
+                       Source Branch
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <input id="branch" name="branch" class="form-control col-md-7 col-xs-12">
+                    </div>
+                  </div> 
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="revision">
+                       Source Revision
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <input id="revision" name="revision" class="form-control col-md-7 col-xs-12">
+                    </div>
+                  </div>               
+                  <div class="ln_solid"></div>
+                  <div class="form-group">
+                     <div class="col-md-6 col-md-offset-3">
+                        <a type="button" class="btn btn-primary" id="cancel-create-cluster" href="/app-clusters/{{appClusterId}}"> Cancel</a>
+                        <button type="submit" class="btn btn-success" id="submit-create-cluster"> Submit</button>
+                     </div>
+                  </div>
+                </form> <!-- end of deploy app cluster form -->
+             </div><!-- end of deploy cluster form -->                    
+          </div>                
+        </div>
+      </div> <!-- End of deploy app cluster form -->
+    </div>
+  </div>
+</div>
+<!-- /page content -->
+{{>footer}}
+
+
+

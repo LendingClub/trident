@@ -7,10 +7,10 @@ import org.lendingclub.mercator.aws.ASGScanner;
 import org.lendingclub.mercator.aws.AWSScannerBuilder;
 import org.lendingclub.mercator.core.Projector;
 import org.lendingclub.neorx.NeoRxClient;
-import org.lendingclub.trident.SwarmNodeType;
 import org.lendingclub.trident.Trident;
 import org.lendingclub.trident.TridentEndpoints;
 import org.lendingclub.trident.cluster.TridentClusterManager;
+import org.lendingclub.trident.swarm.SwarmNodeType;
 import org.lendingclub.trident.swarm.aws.event.AutoScalingGroupCreatedEvent;
 import org.lendingclub.trident.util.JsonUtil;
 import org.slf4j.Logger;
@@ -25,6 +25,7 @@ import com.amazonaws.services.autoscaling.model.BlockDeviceMapping;
 import com.amazonaws.services.autoscaling.model.CreateAutoScalingGroupRequest;
 import com.amazonaws.services.autoscaling.model.CreateAutoScalingGroupResult;
 import com.amazonaws.services.autoscaling.model.CreateLaunchConfigurationRequest;
+import com.amazonaws.services.autoscaling.model.CreateLaunchConfigurationResult;
 import com.amazonaws.services.autoscaling.model.DescribeAutoScalingGroupsRequest;
 import com.amazonaws.services.autoscaling.model.DescribeLaunchConfigurationsRequest;
 import com.amazonaws.services.autoscaling.model.Ebs;
@@ -51,11 +52,12 @@ public class SwarmASGBuilder {
 	private AWSAccountManager accountManager;
 	private AWSClusterManager awsClusterManager;
 
-	List<LaunchConfigDecorator> launchConfigDecoratorList = Lists.newCopyOnWriteArrayList();
-	List<AutoScalingGroupDecorator> asgDecorator = Lists.newCopyOnWriteArrayList();
+	List<LaunchConfigInterceptor> launchConfigDecoratorList = Lists.newCopyOnWriteArrayList();
+	List<AutoScalingGroupInterceptor> asgDecorator = Lists.newCopyOnWriteArrayList();
 
 	CreateLaunchConfigurationRequest launchConfigRequest = new CreateLaunchConfigurationRequest();
-
+	CreateLaunchConfigurationResult launchConfigResult = null;
+	
 	ObjectNode request = JsonUtil.createObjectNode();
 
 	LaunchConfiguration launchConfiguration;
@@ -72,25 +74,25 @@ public class SwarmASGBuilder {
 
 	long timestamp = System.currentTimeMillis();
 
-	public static final String DESIRED_MANAGER_DNS_NAME="desiredManagerDnsName";
-	public static final String MANAGER_DNS_NAME="managerDnsName";
-	public static final String MANAGER_SUBJECT_ALTERNATIVE_NAMES="managerSubjectAlternativeNames";
-	/*
-	 * DNS_ACCOUNT_ATTRIBUTE specifies the account to use for DNS registration.
-	 */
-	public static final String DNS_ACCOUNT="dnsAccount";
+	String tridentBaseUrl = null;
+
+	public static final String DEFAULT_INSTANCE_TYPE="t2.medium";
 	
 	protected SwarmASGBuilder(ObjectNode data) {
 		this.request = data;
-		if (!data.has("swarmNodeType")) {
-			data.put("swarmNodeType", SwarmNodeType.MANAGER.toString());
+		if (!data.has(AWSClusterManager.SWARM_NODE_TYPE)) {
+			data.put(AWSClusterManager.SWARM_NODE_TYPE, SwarmNodeType.MANAGER.toString());
 		} else {
-			SwarmNodeType.valueOf(data.path("swarmNodeType").asText());
+			SwarmNodeType.valueOf(data.path(AWSClusterManager.SWARM_NODE_TYPE).asText());
 		}
 	}
 
 	public String getRegion() {
-		return request.path("region").asText(null);
+		String region = request.path(AWSClusterManager.AWS_REGION).asText(null);
+		if (Strings.isNullOrEmpty(region)) {
+			region = request.path(AWSClusterManager.AWS_REGION).asText(null);
+		}
+		return region;
 	}
 
 	public String getTridentClusterId() {
@@ -102,8 +104,8 @@ public class SwarmASGBuilder {
 		if (asgClientRef == null) {
 			Preconditions.checkArgument(getRegion() != null, "region must be set");
 			Preconditions.checkArgument(!Strings.isNullOrEmpty(getAccountName()), "accountName must be set");
-			this.asgClientRef = accountManager.newClientBuilder(getAccountName(), AmazonAutoScalingClientBuilder.class)
-					.withRegion(getRegion()).build();
+			this.asgClientRef = accountManager.getClient(getAccountName(), AmazonAutoScalingClientBuilder.class,getRegion());
+	
 		}
 		return asgClientRef;
 	}
@@ -140,8 +142,9 @@ public class SwarmASGBuilder {
 		
 		Preconditions.checkState(!Strings.isNullOrEmpty(getTridentClusterId()), "tridentClusterId must be set");
 		Preconditions.checkState(accountManager != null, "accountManager must be set");
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(getTemplate()), "template must be set");
 
-
+		awsClusterManager.copyTemplateIntoContext(getTemplate(), this.request);
 		String clusterName = awsClusterManager.neo4j
 				.execCypher("match (s:DockerSwarm {tridentClusterId:{id}}) return s", "id", getTridentClusterId())
 				.blockingFirst().path("name").asText();
@@ -162,7 +165,7 @@ public class SwarmASGBuilder {
 		blockDeviceMapping.setEbs(ebs);
 		List<BlockDeviceMapping> bdmList = Lists.newArrayList(blockDeviceMapping);
 		launchConfigRequest.setBlockDeviceMappings(bdmList);
-
+		launchConfigRequest.withInstanceType(DEFAULT_INSTANCE_TYPE);
 		Preconditions.checkNotNull(awsClusterManager);
 
 		JsonUtil.logInfo(SwarmASGBuilder.class, "swarmJsonNode", request);
@@ -174,7 +177,7 @@ public class SwarmASGBuilder {
 		injectCloudInit(launchConfigRequest);
 		JsonUtil.logInfo(getClass(), "launchConfig", launchConfigRequest);
 
-		getASGClient().createLaunchConfiguration(launchConfigRequest);
+		launchConfigResult = getASGClient().createLaunchConfiguration(launchConfigRequest);
 
 		asgRequest.setLaunchConfigurationName(launchConfigRequest.getLaunchConfigurationName());
 
@@ -226,14 +229,25 @@ public class SwarmASGBuilder {
 		});
 
 		this.asgResult = getASGClient().createAutoScalingGroup(asgRequest);
-		new AutoScalingGroupCreatedEvent().withTridentClusterId(getTridentClusterId()).withAttribute("aws_autoScalingGroupName",asgRequest.getAutoScalingGroupName()).send();
+		
+		new AutoScalingGroupCreatedEvent()
+			.withTridentClusterId(getTridentClusterId())
+			.withAttribute("aws_autoScalingGroupName",asgRequest.getAutoScalingGroupName())
+			.withMessage(
+					String.format("Autoscaling group %s created in account %s", asgRequest.getAutoScalingGroupName(), getAccountName()))
+			.send();
+	
 		// set the desired dns name if it is not set
 		if (getSwarmNodeType() == SwarmNodeType.MANAGER) {
-			String dnsName = request.path(DESIRED_MANAGER_DNS_NAME).asText();
-			String san = request.path(MANAGER_SUBJECT_ALTERNATIVE_NAMES).asText();
+			String dnsName = request.path(AWSClusterManager.MANAGER_DNS_NAME).asText();
+			
+			String san = request.path(AWSClusterManager.MANAGER_SUBJECT_ALTERNATIVE_NAMES).asText();
 			if (!Strings.isNullOrEmpty(dnsName)) {
+				
+				// If dnsName contains a %s, merge the clusterName into it
+				dnsName = String.format(dnsName, clusterName);
 				getAWSClusterManager().neo4j.execCypher(
-						"match (s:DockerSwarm {tridentClusterId:{id}}) where not exists (s.desiredManagerDnsName) set s.desiredManagerDnsName={dnsName}",
+						"match (s:DockerSwarm {tridentClusterId:{id}}) where not exists (s.managerDnsName) set s.managerDnsName={dnsName}",
 						"id", getTridentClusterId(), "dnsName", dnsName);
 			}
 			if (!Strings.isNullOrEmpty(san)) {
@@ -257,12 +271,12 @@ public class SwarmASGBuilder {
 	}
 
 	public SwarmASGBuilder withManagerDnsAccountName(String val) {
-		getRequestData().put("managerDnsAccountName", val);
+		getRequestData().put(AWSClusterManager.AWS_MANAGER_HOSTED_ZONE_ACCOUNT, val);
 		return this;
 	}
 
 	public String getManagerDnsAccountName() {
-		String val = getRequestData().path("managerDnsAccountName").asText();
+		String val = getRequestData().path(AWSClusterManager.AWS_MANAGER_HOSTED_ZONE_ACCOUNT).asText();
 		if (Strings.isNullOrEmpty(val)) {
 			return getAccountName();
 		} else {
@@ -271,11 +285,11 @@ public class SwarmASGBuilder {
 	}
 
 	public String getAccountName() {
-		return getRequestData().path("accountName").asText(null);
+		return getRequestData().path(AWSClusterManager.AWS_ACCOUNT).asText(null);
 	}
 
 	public SwarmASGBuilder withAccountName(String name) {
-		getRequestData().put("accountName", name);
+		getRequestData().put(AWSClusterManager.AWS_ACCOUNT, name);
 		return this;
 	}
 
@@ -287,36 +301,43 @@ public class SwarmASGBuilder {
 	public SwarmASGBuilder withAWSClusterManager(AWSClusterManager m) {
 		this.awsClusterManager = m;
 
-		this.launchConfigDecoratorList.addAll(m.launchConfigDecoratorList);
-		this.asgDecorator.addAll(m.asgDecorator);
+		this.launchConfigDecoratorList.addAll(m.launchConfigInterceptors.getInterceptors());
+		this.asgDecorator.addAll(m.asgDecorator.getInterceptors());
 
 		return this;
 	}
 
+	public String getTridentBaseUrl() {
+		return request.path("tridentBaseUrl").asText(Trident.getApplicationContext().getBean(TridentEndpoints.class).getAPIEndpoint());
+	}
+	public SwarmASGBuilder withTridentBaseUrl(String url) {
+		request.put("tridentBaseUrl", url);
+		return this;
+	}
 	public SwarmASGBuilder withSwarmName(String name) {
 		request.put("tridentClusterName", name);
 		request.put("name", name);
 		return this;
 	}
 	public SwarmASGBuilder withSwarmNodeType(SwarmNodeType nodeType) {
-		request.put("swarmNodeType", nodeType.toString());
+		request.put(AWSClusterManager.SWARM_NODE_TYPE, nodeType.toString());
 		return this;
 	}
 
 	public SwarmASGBuilder withManagerDnsName(String dns) {
-		request.put("managerDnsName", dns);
+		request.put(AWSClusterManager.MANAGER_DNS_NAME, dns);
 
 		return this;
 	}
 
 	public SwarmASGBuilder withTridentClusterId(String id) {
 
-		request.put("tridentClusterId", id);
+		request.put(AWSClusterManager.TRIDENT_CLUSTER_ID, id);
 		return this;
 	}
 
 	public SwarmASGBuilder withRegion(Regions region) {
-		request.put("region", region.toString());
+		request.put(AWSClusterManager.AWS_REGION, region.toString());
 		return this;
 	}
 
@@ -324,7 +345,7 @@ public class SwarmASGBuilder {
 		if (Strings.isNullOrEmpty(region)) {
 			throw new IllegalArgumentException("region cannot be null or empty");
 		}
-		request.put("region", Regions.fromName(region).toString());
+		request.put(AWSClusterManager.AWS_REGION, Regions.fromName(region).toString());
 		return this;
 	}
 
@@ -342,8 +363,9 @@ public class SwarmASGBuilder {
 		if (Strings.isNullOrEmpty(s.trim())) {
 			s = "#!/bin/bash\n";
 		}
-		String command = String.format("curl -k '%s/provision/node-init?id=%s&nodeType=%s' | bash -x",
-				Trident.getApplicationContext().getBean(TridentEndpoints.class).getAPIEndpoint(), getTridentClusterId(),
+		
+		String command = String.format("curl -k '%s/provision/node-init/%s/%s' | bash -x",
+				getTridentBaseUrl(), getTridentClusterId(),
 				getSwarmNodeType().toString());
 
 		s += "\n\n";
@@ -356,7 +378,7 @@ public class SwarmASGBuilder {
 	}
 
 	public SwarmNodeType getSwarmNodeType() {
-		return SwarmNodeType.valueOf(request.path("swarmNodeType").asText(SwarmNodeType.MANAGER.toString()));
+		return SwarmNodeType.valueOf(request.path(AWSClusterManager.SWARM_NODE_TYPE).asText(SwarmNodeType.MANAGER.toString()));
 	}
 
 	private void createRelationships() {
@@ -385,29 +407,29 @@ public class SwarmASGBuilder {
 
 		NeoRxClient neo4j = Trident.getApplicationContext().getBean(NeoRxClient.class);
 		String cypher = "match (a:AwsAsg {aws_autoScalingGroupARN:{asgArn}}), (t:DockerSwarm {tridentClusterId:{tridentClusterId}}) merge (t)-[x:PROVIDED_BY]->(a)";
-		neo4j.execCypher(cypher, "asgArn", arn, "tridentClusterId", getTridentClusterId());
+		neo4j.execCypher(cypher, "asgArn", arn, AWSClusterManager.TRIDENT_CLUSTER_ID, getTridentClusterId());
 	}
 
-	public SwarmASGBuilder addAutoScalingGroupDecorator(AutoScalingGroupDecorator g) {
+	public SwarmASGBuilder addAutoScalingGroupDecorator(AutoScalingGroupInterceptor g) {
 		this.asgDecorator.add(g);
 		return this;
 	}
 
-	public SwarmASGBuilder addLaunchConfigDecorator(LaunchConfigDecorator g) {
+	public SwarmASGBuilder addLaunchConfigDecorator(LaunchConfigInterceptor g) {
 		this.launchConfigDecoratorList.add(g);
 		return this;
 	}
 
 	public String getManagerDnsName() {
-		return getRequestData().path("managerDnsName").asText(null);
+		return getRequestData().path(AWSClusterManager.MANAGER_DNS_NAME).asText(null);
 	}
 
 	public String getHostedZoneId() {
-		return getRequestData().path("hostedZoneId").asText(null);
+		return getRequestData().path(AWSClusterManager.AWS_MANAGER_HOSTED_ZONE).asText(null);
 	}
 
 	public SwarmASGBuilder withHostedZoneId(String id) {
-		getRequestData().put("hostedZoneId", id);
+		getRequestData().put(AWSClusterManager.AWS_MANAGER_HOSTED_ZONE, id);
 
 		return this;
 	}
@@ -420,4 +442,12 @@ public class SwarmASGBuilder {
 		return Trident.getApplicationContext().getBean(TridentClusterManager.class);
 	}
 
+	public String getTemplate() {
+		return request.path("templateName").asText(null);
+	}
+	public SwarmASGBuilder withTemplate(String template) {
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(template),"template cannot be null or empty");
+		this.request.put("templateName", template);
+		return this;
+	}
 }

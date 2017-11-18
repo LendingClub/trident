@@ -12,11 +12,14 @@ import org.junit.Before;
 import org.junit.Test;
 import org.lendingclub.neorx.NeoRxClient;
 import org.lendingclub.trident.TridentIntegrationTest;
+import org.lendingclub.trident.envoy.swarm.SwarmIntegrationTestUtils;
 import org.lendingclub.trident.swarm.SwarmDiscoverySearch;
 import org.lendingclub.trident.swarm.SwarmDiscoverySearch.Service;
 import org.lendingclub.trident.swarm.SwarmDiscoverySearch.ServiceImpl;
 import org.lendingclub.trident.swarm.SwarmDiscoverySearch.MatchResult;
 import org.lendingclub.trident.util.JsonUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -27,9 +30,15 @@ import com.google.common.collect.ImmutableList;
 
 public class SwarmDiscoverySearchIntegrationTest extends TridentIntegrationTest {
 	ObjectMapper mapper = new ObjectMapper();
+
+	Logger logger = LoggerFactory.getLogger(SwarmDiscoverySearchIntegrationTest.class);
+
 	@Autowired
 	NeoRxClient neo4j;
 
+	@Autowired
+	SwarmClusterManager swarmClusterManager;
+	
 	public TestServiceBuilder addService(String id) {
 		return new TestServiceBuilder(neo4j).addService(id);
 	}
@@ -55,25 +64,6 @@ public class SwarmDiscoverySearchIntegrationTest extends TridentIntegrationTest 
 
 	}
 
-	void assertSearchResults(String region, String serviceGroup, String env, String subenv, List<String> vals) {
-		assertSearchResults(region, serviceGroup, env, subenv, vals, ImmutableList.of());
-	}
-
-	void assertSearchResults(String region, String serviceGroup, String env, String subenv, List<String> vals,
-			List<String> doesNotContain) {
-		List<String> x = new SwarmDiscoverySearch(neo4j).withEnvironment(env).withServiceGroup(serviceGroup)
-				.withRegion(region).withSubEnvironment(subenv).search().stream().map(f -> {
-					return f.getServiceId();
-				}).collect(Collectors.toList());
-		Assertions.assertThat(x).contains(vals.toArray(new String[0]));
-
-		if (doesNotContain == null || doesNotContain.isEmpty()) {
-			// do nothing
-		} else {
-			Assertions.assertThat(x).doesNotContain(doesNotContain.toArray(new String[0]));
-		}
-	}
-
 	@Test
 	public void testXX() {
 
@@ -82,13 +72,21 @@ public class SwarmDiscoverySearchIntegrationTest extends TridentIntegrationTest 
 		addService("x1a").withAppId("x1").withEnvironment("qa").withSubEnvironment("f1").withServiceGroup("junit");
 		addService("x2").withAppId("x2").withEnvironment("qa").withSubEnvironment("").withServiceGroup("junit");
 
-		assertSearchResults("uw2", "junit", "qa", "default", ImmutableList.of("x1", "x2"));
-		assertSearchResults("uw2", "junit", "qa", "default", ImmutableList.of("x1", "x2"));
-		assertSearchResults("uw2", "junit", "qa", "default", ImmutableList.of("x1", "x2"));
+		SwarmIntegrationTestUtils.assertSearchResults("uw2", "junit", "qa", "default", ImmutableList.of("x1", "x2"), neo4j);
+		SwarmIntegrationTestUtils.assertSearchResults("uw2", "junit", "qa", "default", ImmutableList.of("x1", "x2"), neo4j);
+		SwarmIntegrationTestUtils.assertSearchResults("uw2", "junit", "qa", "default", ImmutableList.of("x1", "x2"), neo4j);
 
-		System.out.println(new SwarmDiscoverySearch(neo4j).search());
+		System.out.println(new SwarmDiscoverySearch(neo4j).withEnvironment("qa").withRegion("uw2").withServiceGroup("junit").search());
 
-		// assertSearchResults("","","qa",null,ImmutableList.of("x1","x2"));
+		 SwarmIntegrationTestUtils.assertSearchResults("uw2","junit","qa","default",ImmutableList.of("x1","x2"), neo4j);
+		 
+		new SwarmDiscoverySearch(neo4j).withRegion("uw2").withServiceGroup("junit").withEnvironment("qa").search().forEach(it->{
+			System.out.println(it);
+			
+		});
+		
+	
+		
 	}
 
 	@Test
@@ -104,13 +102,13 @@ public class SwarmDiscoverySearchIntegrationTest extends TridentIntegrationTest 
 		addService("s2").withEnvironment("prod").withSubEnvironment("default").withServiceGroup("g1");
 		addService("s3").withEnvironment("prod").withSubEnvironment("default").withServiceGroup("g1,g2");
 		addService("s4").withEnvironment("prod").withSubEnvironment("default").withServiceGroup("!g3");
-		assertSearchResults("uw2", "a", "prod", "default", ImmutableList.of("s1", "s4"));
+		SwarmIntegrationTestUtils.assertSearchResults("uw2", "a", "prod", "default", ImmutableList.of("s1", "s4"), neo4j);
 
 		// All will be selected because s1 is a wildcard match, and g1 is in
 		// both s2 and s3, and g1 is not g3
-		assertSearchResults("uw2", "g1", "prod", "default", ImmutableList.of("s1", "s2", "s3", "s4"));
+		SwarmIntegrationTestUtils.assertSearchResults("uw2", "g1", "prod", "default", ImmutableList.of("s1", "s2", "s3", "s4"), neo4j);
 
-		assertSearchResults("uw2", "g3", "prod", "default", ImmutableList.of("s1"));
+		SwarmIntegrationTestUtils.assertSearchResults("uw2", "g3", "prod", "default", ImmutableList.of("s1"), neo4j);
 	}
 
 	@Test
@@ -123,8 +121,8 @@ public class SwarmDiscoverySearchIntegrationTest extends TridentIntegrationTest 
 				.withServiceGroup("junit");
 		addService("s1a").withAppId("s1").withEnvironment("prod").withSubEnvironment("a").withServiceGroup("junit");
 
-		assertSearchResults("uw2", "junit", "prod", "default", ImmutableList.of("s1", "s2"));
-		assertSearchResults("uw2", "junit", "prod", "a", ImmutableList.of("s2", "s1a"), ImmutableList.of("s1"));
+		SwarmIntegrationTestUtils.assertSearchResults("uw2", "junit", "prod", "default", ImmutableList.of("s1", "s2"), neo4j);
+		SwarmIntegrationTestUtils.assertSearchResults("uw2", "junit", "prod", "a", ImmutableList.of("s2", "s1a"), ImmutableList.of("s1"), neo4j);
 		// assertSearchResults("uw2", "g3", "prod","default",
 		// ImmutableList.of("s1"));
 	}
@@ -158,8 +156,8 @@ public class SwarmDiscoverySearchIntegrationTest extends TridentIntegrationTest 
 	}
 	@Test
 	public void testSubEnvMatching() {
-		Assertions.assertThat(new SwarmDiscoverySearch(null).matchSubEnv("", "default", "")).isEqualTo(MatchResult.NONE);
-		Assertions.assertThat(new SwarmDiscoverySearch(null).matchSubEnv(null, "default", "")).isEqualTo(MatchResult.NONE);
+		Assertions.assertThat(new SwarmDiscoverySearch(null).matchSubEnv("", "default", "")).isEqualTo(MatchResult.DEFAULT);
+		Assertions.assertThat(new SwarmDiscoverySearch(null).matchSubEnv(null, "default", "")).isEqualTo(MatchResult.DEFAULT);
 		Assertions.assertThat(new SwarmDiscoverySearch(null).matchSubEnv("default", "default", "")).isEqualTo(MatchResult.DEFAULT);
 		Assertions.assertThat(new SwarmDiscoverySearch(null).matchSubEnv("default", "", "")).isEqualTo(MatchResult.DEFAULT);
 		Assertions.assertThat(new SwarmDiscoverySearch(null).matchSubEnv("default", null, "")).isEqualTo(MatchResult.DEFAULT);
@@ -217,5 +215,28 @@ public class SwarmDiscoverySearchIntegrationTest extends TridentIntegrationTest 
 		Assertions.assertThat(sds.parse("foo, bar,!baz").getIncludes()).containsExactly("foo", "bar");
 		Assertions.assertThat(sds.parse("foo, bar,!baz").getExcludes()).containsExactly("baz");
 		Assertions.assertThat(sds.parse("foo, bar,!baz, !fizz").getExcludes()).containsExactly("baz", "fizz");
+	}
+	
+	@Test(expected=IllegalArgumentException.class)
+	public void testMandatoryEnvironment() {
+		new SwarmDiscoverySearch(neo4j).withRegion("region").withServiceGroup("sg").search();
+		
+	}
+	@Test(expected=IllegalArgumentException.class)
+	public void testMandatoryServiceGroup() {
+		new SwarmDiscoverySearch(neo4j).withEnvironment("dummy").withRegion("region").search();
+		
+	}
+	@Test(expected=IllegalArgumentException.class)
+	public void testMandatoryRegion() {
+		new SwarmDiscoverySearch(neo4j).withEnvironment("dummy").withServiceGroup("sg").search();
+		
+	}
+	
+	@Test
+	public void localTest() {
+		swarmClusterManager.newServiceDiscoverySearch().withRegion("local").withEnvironment("demo").withServiceGroup("www").search().forEach(it->{
+			logger.info(it.toString());
+		});
 	}
 }

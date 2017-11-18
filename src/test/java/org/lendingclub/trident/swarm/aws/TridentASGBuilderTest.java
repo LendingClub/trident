@@ -2,8 +2,8 @@ package org.lendingclub.trident.swarm.aws;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
-import org.lendingclub.trident.SwarmNodeType;
 import org.lendingclub.trident.TridentIntegrationTest;
+import org.lendingclub.trident.swarm.SwarmNodeType;
 import org.lendingclub.trident.swarm.aws.SwarmASGBuilder;
 import org.lendingclub.trident.util.JsonUtil;
 import org.slf4j.Logger;
@@ -29,8 +29,8 @@ public class TridentASGBuilderTest extends TridentIntegrationTest {
 
 		String cloudInit = new String(BaseEncoding.base64().decode(request.getUserData()));
 		Assertions.assertThat(cloudInit.trim()).startsWith("#!/bin/bash");
-		Assertions.assertThat(cloudInit).contains("/api/trident/provision/node-init?id=2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae")
-				.contains("node-init?id=").contains("&nodeType=WORKER");
+		Assertions.assertThat(cloudInit).contains("/api/trident/provision/node-init/2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae/WORKER")
+;
 		
 	
 
@@ -48,8 +48,8 @@ public class TridentASGBuilderTest extends TridentIntegrationTest {
 
 		String cloudInit = new String(BaseEncoding.base64().decode(b.launchConfigRequest.getUserData()));
 		Assertions.assertThat(cloudInit.trim()).startsWith("#!/bin/sh");
-		Assertions.assertThat(cloudInit).contains("/api/trident/provision/node-init?id=2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae")
-				.contains("node-init?id=").contains("&nodeType=WORKER").contains("curl -k 'http");
+		Assertions.assertThat(cloudInit).contains("/api/trident/provision/node-init/2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae/WORKER")
+	.contains("curl -k 'http");
 
 	}
 }

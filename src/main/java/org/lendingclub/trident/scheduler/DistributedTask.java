@@ -1,7 +1,5 @@
 package org.lendingclub.trident.scheduler;
 
-import java.util.concurrent.Callable;
-
 import org.lendingclub.neorx.NeoRxClient;
 import org.lendingclub.trident.Trident;
 import org.springframework.context.ApplicationContext;
@@ -23,6 +21,7 @@ public abstract class DistributedTask implements Runnable {
 	public ApplicationContext getApplicationContext() {
 		return Trident.getInstance().getApplicationContext();
 	}
+	
 	public JsonNode getData() {
 		return data;
 	}

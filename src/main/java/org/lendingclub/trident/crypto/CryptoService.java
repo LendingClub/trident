@@ -34,18 +34,22 @@ public class CryptoService {
 	}
 
 	public String decryptString(String string) {
-		return decryptString(decodeArmoredPayload(string));
+		if (isEncrypted(string)) {
+			return decryptString(decodeArmoredPayload(string));
+		} else {
+			return string;
+		}
 	}
 
 	private String decryptString(JsonNode d) {
-		
+
 		return new String(decryptBytes(d));
 	}
 
 	private byte[] decryptBytes(JsonNode envelope) {
 		String method = envelope.path("p").asText();
 		CryptoProvider crypto = getCryptoProvider(method);
-	
+
 		return crypto.decrypt(envelope);
 
 	}
@@ -72,8 +76,9 @@ public class CryptoService {
 	}
 
 	public boolean isEncrypted(String x) {
-		return x!=null && x.startsWith("QHsicCI6");
+		return x != null && x.startsWith("QHsicCI6");
 	}
+
 	public String encrypt(byte[] b) {
 		return encrypt(b, preferredProvider);
 	}
@@ -81,7 +86,7 @@ public class CryptoService {
 	public String encrypt(byte[] b, String provider) {
 
 		ObjectNode n = JsonUtil.getObjectMapper().createObjectNode().put("p", provider);
-		getCryptoProvider(provider).encrypt(b,n);
+		getCryptoProvider(provider).encrypt(b, n);
 		byte[] data = (MAGIC_PREFIX + n.toString()).getBytes();
 
 		return BaseEncoding.base64Url().encode(data);

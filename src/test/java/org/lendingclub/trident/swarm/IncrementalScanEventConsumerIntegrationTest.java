@@ -4,7 +4,7 @@ import java.io.StringReader;
 import java.nio.file.Path;
 import java.util.Properties;
 
-import org.apache.ignite.resources.IgniteInstanceResource;
+
 import org.assertj.core.api.Assertions;
 import org.junit.Assume;
 import org.junit.Test;

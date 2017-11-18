@@ -5,8 +5,9 @@ pages:
     - Architecture: architecture.md
     - Envoy: envoy.md
     - Data Model: data-model.md
+    - Security: security.md
     - FAQ: faq.md
-theme: readthedocs
+theme: material
     
     
 

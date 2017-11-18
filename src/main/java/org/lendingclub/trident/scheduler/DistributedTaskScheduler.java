@@ -1,22 +1,24 @@
 package org.lendingclub.trident.scheduler;
 
+import java.security.SecureRandom;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
-
-import javax.annotation.PostConstruct;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.lendingclub.mercator.core.SchemaManager;
 import org.lendingclub.neorx.NeoRxClient;
 import org.lendingclub.trident.cluster.TridentClusterManager;
 import org.lendingclub.trident.swarm.SwarmScanTask;
-import org.lendingclub.trident.swarm.aws.AWSRegistrationTask;
-import org.lendingclub.trident.swarm.aws.AWSScannerTask;
-import org.lendingclub.trident.swarm.aws.AWSTerminatedNodeCleanupTask;
-import org.lendingclub.trident.swarm.aws.ManagerDnsRegistrationTask;
-import org.lendingclub.trident.swarm.aws.ManagerELBCreationTask;
+import org.lendingclub.trident.swarm.aws.task.AWSEventSetupTask;
+import org.lendingclub.trident.swarm.aws.task.AWSRegistrationTask;
+import org.lendingclub.trident.swarm.aws.task.AWSScannerTask;
+import org.lendingclub.trident.swarm.aws.task.AWSTerminatedNodeCleanupTask;
+import org.lendingclub.trident.swarm.aws.task.AutoScalingGroupNotificationRegistrationTask;
+import org.lendingclub.trident.swarm.aws.task.LoadBalancerSetupTask;
+import org.lendingclub.trident.swarm.aws.task.ManagerDnsRegistrationTask;
+import org.lendingclub.trident.swarm.aws.task.ManagerELBCreationTask;
+import org.lendingclub.trident.swarm.aws.task.AWSManagerASGScaleUpTask;
 import org.lendingclub.trident.util.JsonUtil;
 import org.lendingclub.trident.util.TridentStartupListener;
 import org.slf4j.Logger;
@@ -25,9 +27,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.hash.Hashing;
+import com.google.common.io.BaseEncoding;
+import com.google.common.primitives.Longs;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import it.sauronsoftware.cron4j.Scheduler;
 import it.sauronsoftware.cron4j.SchedulingPattern;
@@ -45,19 +51,17 @@ public class DistributedTaskScheduler implements TridentStartupListener {
 	Logger logger = org.slf4j.LoggerFactory.getLogger(DistributedTaskScheduler.class);
 	ExecutorService executor;
 
-	ScheduledExecutorService scheduledExecutor;
-
 	@Autowired
 	NeoRxClient neo4j;
 
 	@Autowired
 	TridentClusterManager tridentClusterManager;
-	
+
 	class TridentTaskCollector implements TaskCollector {
 
 		@Override
 		public TaskTable getTasks() {
-		
+
 			TaskTable tt = new TaskTable();
 			if (!tridentClusterManager.isLeader()) {
 				logger.info("we are not the leader so we do not run cron4j");
@@ -67,14 +71,14 @@ public class DistributedTaskScheduler implements TridentStartupListener {
 
 			neo4j.execCypher("match (t:TridentTaskSchedule) where t.enabled=true return t").forEach(it -> {
 				try {
-					String id = it.path("id").asText();
-					String crontab = it.path("pattern").asText();
-					String task = it.path("task").asText();
+					String id = it.path("scheduleId").asText();
+					String crontab = it.path("cronExpression").asText();
+					String task = it.path("taskClass").asText();
 					SchedulingPattern sp = new SchedulingPattern(crontab);
 
 					Preconditions.checkArgument(!Strings.isNullOrEmpty(id), "invalid id: " + it);
 					Preconditions.checkArgument(!Strings.isNullOrEmpty(task), "invalid task: " + it);
-					tt.add(sp, toCron4jTask(id, task, it));
+					tt.add(sp, toCron4jTask(id, crontab, task, it));
 				} catch (RuntimeException e) {
 					logger.info("could not schedule: " + it, e);
 				}
@@ -84,42 +88,89 @@ public class DistributedTaskScheduler implements TridentStartupListener {
 
 	}
 
+	class IgniteQueueConsumer implements Runnable {
+		@Override
+		public void run() {
+
+			while (true == true) {
+				try {
+					if (tridentClusterManager.isEligibleLeader()) {
+						takeItemFromIgniteQueue();
+					} else {
+						try {
+							Thread.sleep(5000);
+						} catch (Exception ignore) {
+						}
+					}
+				} catch (Exception e) {
+					logger.warn("problem getting item from ignite queue", e);
+
+				}
+			}
+
+		}
+	}
+
 	public final void submitTask(Class<? extends DistributedTask> task) {
 		submitTask(task, null);
 	}
 
 	public final void submitTask(Class<? extends DistributedTask> task, JsonNode n) {
-		submitTask(task, n);
-	}
-
-	public final void submitTask(String task) {
-		submitTask(task, null);
-	}
-
-	public void submitTask(String task, JsonNode n) {
-		if (n == null || n.isMissingNode() || n.isNull()) {
-			n = JsonUtil.createObjectNode();
+		ObjectNode taskNode = null;
+		if (n != null && n.isObject()) {
+			taskNode = n.deepCopy();
+		} else {
+			taskNode = JsonUtil.createObjectNode();
 		}
+
+		taskNode.put("taskClass", task.getName());
+		taskNode.remove("createTs");
+		taskNode.remove("updateTs");
+		taskNode.remove("enabled");
+		submitTask(taskNode);
+	}
+
+	private void addTaskQueue(JsonNode n) {
+		JsonUtil.logInfo("adding task to queue", n);
 		String uuid = UUID.randomUUID().toString();
 		neo4j.execCypher(
-				"create (t:TridentTask {tridentTaskId:{tridentTaskId}}) set t.submitTs=timestamp(), t.task={task}, t+={props}",
-				"tridentTaskId", uuid, "task", task, "props", n);
+				"merge (a:TridentTaskQueue {taskId:{taskId}}) set a+={props}, a.claimId={claimId}, a.createTs=timestamp()",
+				"taskId", n.path("taskId").asText(), "props", n, "claimId", uuid);
+
 	}
 
-	private Task toCron4jTask(String id, String name, JsonNode n) {
+	public void submitTask(ObjectNode n) {
+		ObjectNode copy = n.deepCopy();
+		if (!copy.has("taskId")) {
+			copy.put("taskId", "tid-" + BaseEncoding.base32().encode(Longs.toByteArray(new SecureRandom().nextLong()))
+					.replace("=", "").toLowerCase());
+		}
+		copy.remove("enabled");
+		copy.remove("createTs");
+		copy.remove("updateTs");
+
+		addTaskQueue(copy);
+	}
+
+	private Task toCron4jTask(String id, String crontab, String name, JsonNode n) {
 		Task task = new Task() {
 
 			@Override
 			public void execute(TaskExecutionContext context) throws RuntimeException {
 				Preconditions.checkArgument(!Strings.isNullOrEmpty(id));
 				Preconditions.checkArgument(!Strings.isNullOrEmpty(name));
-				String uuid = UUID.randomUUID().toString();
-				neo4j.execCypher(
-						"create (t:TridentTask {tridentTaskId:{tridentTaskId}}) set t.submitTs=timestamp(), t.task={task}, t+={props}",
-						"tridentTaskId", uuid, "task", name, "props", n);
-				neo4j.execCypher(
-						"match (q:TridentTask {tridentTaskId:{tridentTaskId}}), (s:TridentTaskSchedule {id:{scheduleId}}) merge (q)-[x:SCHEDULED_BY]->(s)",
-						"tridentTaskId", uuid, "scheduleId", id);
+
+				ObjectNode copy = null;
+				if (n != null && n.isObject()) {
+					copy = n.deepCopy();
+				} else {
+					copy = JsonUtil.createObjectNode();
+				}
+				copy.put("taskId", UUID.randomUUID().toString());
+				copy.put("scheduleId", id);
+				copy.put("taskClass", name);
+				copy.put("cronExpression", crontab);
+				submitTask(copy);
 			}
 
 		};
@@ -130,62 +181,73 @@ public class DistributedTaskScheduler implements TridentStartupListener {
 
 		if (neo4j.checkConnection()) {
 			SchemaManager sm = new SchemaManager(neo4j);
-			sm.applyUniqueConstraint("TridentTaskSchedule", "id");
-			sm.applyUniqueConstraint("TridentTask", "tridentTaskId");
 
+			// remove old constraints
+			// sm.dropUniqueConstraint("TridentTaskSchedule","id");
+			// sm.dropUniqueConstraint("TridentTask","tridentTaskId");
+			sm.applyUniqueConstraint("TridentTaskSchedule", "scheduleId");
+			sm.applyUniqueConstraint("TridentTask", "taskId");
+			sm.applyUniqueConstraint("TridentTaskQueue","taskId");
 		}
 	}
 
-	@PostConstruct
-	public void startup() {
+	private void takeItemFromIgniteQueue() {
 
-		applyConstraints();
-
-		cron4j.addTaskCollector(new TridentTaskCollector());
-		cron4j.start();
-		this.executor = Executors.newFixedThreadPool(10);
-		Runnable r = new Runnable() {
-
-			@Override
-			public void run() {
-				if (tridentClusterManager.isEligibleLeader());
-				logger.debug("looking for tasks...");
-				neo4j.execCypher("match (t:TridentTask) where not exists(t.taskExecutor) return t").forEach(it -> {
-					String task = it.path("task").asText();
-					String id = it.path("tridentTaskId").asText();
-
-					if (!Strings.isNullOrEmpty(id)) {
-						neo4j.execCypher(
-								"match (t:TridentTask{tridentTaskId:{id}}) where not exists(t.taskExecutor) set t.startTs=timestamp(), t.taskExecutor={te} return t",
-								"id", id, "te", taskExecutorId).forEach(x -> {
-									logger.info("submitting task " + x);
-									submitLocal(task, x);
-
-								});
-
-					}
-
-				});
-
-				neo4j.execCypher(
-						"match (t:TridentTask) where  t.submitTs<timestamp()-{retentionMillis} detach delete t",
-						"retentionMillis", TimeUnit.HOURS.toMillis(1));
-
-			}
-
-		};
-		scheduledExecutor = Executors.newSingleThreadScheduledExecutor();
-		scheduledExecutor.scheduleWithFixedDelay(r, 0, 5, TimeUnit.SECONDS);
-
+	
+		AtomicLong count = new AtomicLong(0);
+		neo4j.execCypher("match (a:TridentTaskQueue) return a order by a.createTs desc limit 1").forEach(it -> {
+			
+			// First delete the task.  
+			long c = neo4j.execCypher("match (a:TridentTaskQueue {taskId:{taskId}}) delete a return a", "taskId",
+					it.path("taskId").asText()).count().blockingGet();
+			JsonUtil.logInfo("process item", it);
+			count.addAndGet(c);
+			if (c>0) {
+				submitLocal(it);
+			}	
+		});
 		
+		
+		if (count.get() == 0) {
+			try {
+				Thread.sleep(1000L);
+			} catch (Exception e) {
+			}
+		}
+		else {
+			logger.info("from queue: {}",count.get());
+		}
+		
+
 	}
 
-	public final void submitLocal(DistributedTask task) {
+	protected void recordTaskStart(DistributedTask task) {
+		neo4j.execCypher(
+				"merge (t:TridentTask {taskId:{taskId}}) on create set t.startTs=timestamp(),t.cronExpression={cronExpression},t.status='started',t+={props}",
+				"taskClass", task.getClass().getName(), "taskId", task.getData().path("taskId").asText(),
+				"cronExpression", task.getData().path("cronExpression").asText(), "props", task.getData());
+	}
+
+	protected void recordTaskEnd(DistributedTask task) {
+		neo4j.execCypher("merge (t:TridentTask {taskId:{taskId}}) set t.endTs=timestamp(),t.status='complete'",
+				"taskId", task.getData().path("taskId").asText());
+	}
+
+	protected void recordTaskFailure(DistributedTask task, Exception e) {
+
+		neo4j.execCypher("merge (t:TridentTask {taskId:{taskId}}) set t.endTs=timestamp(),t.status='failed'", "taskId",
+				task.getData().path("taskId").asText());
+	}
+
+	private final void submitLocal(DistributedTask task) {
 		Runnable exceptionSafeWrapper = new Runnable() {
 			public void run() {
 				try {
+					recordTaskStart(task);
 					task.run();
+					recordTaskEnd(task);
 				} catch (Exception e) {
+					recordTaskFailure(task, e);
 					LoggerFactory.getLogger(task.getClass()).error("problem running task: " + task, e);
 				}
 			}
@@ -193,21 +255,15 @@ public class DistributedTaskScheduler implements TridentStartupListener {
 		this.executor.submit(exceptionSafeWrapper);
 	}
 
-	public final void submitLocal(Class<? extends DistributedTask> c, JsonNode data) {
-		submitLocal(c.getName(), data);
-	}
+	private final void submitLocal(JsonNode data) {
 
-	public final void submitLocal(Class<? extends DistributedTask> c) {
-		submitLocal(c.getName());
-	}
-
-	public final void submitLocal(String name) {
-		submitLocal(name, null);
-	}
-
-	public final void submitLocal(String name, JsonNode data) {
+		String name = null;
 		try {
 
+			name = data.path("taskClass").asText(null);
+			if (Strings.isNullOrEmpty(name)) {
+				throw new IllegalArgumentException("taskClass must be set");
+			}
 			Class<? extends DistributedTask> taskClass = (Class<? extends DistributedTask>) Class.forName(name);
 			DistributedTask task = taskClass.newInstance();
 			if (data == null || data.isNull() || data.isMissingNode()) {
@@ -215,9 +271,8 @@ public class DistributedTaskScheduler implements TridentStartupListener {
 			}
 			task.init(this, data);
 			submitLocal(task);
-		}
-		catch (ClassNotFoundException e) {
-			logger.warn("task class not found: {}",name);
+		} catch (ClassNotFoundException e) {
+			logger.warn("task class not found: {}", name);
 		} catch (IllegalAccessException | InstantiationException e) {
 			logger.warn("problem submitting task for execution", e);
 		}
@@ -225,8 +280,9 @@ public class DistributedTaskScheduler implements TridentStartupListener {
 	}
 
 	public void enableTask(String id, boolean b) {
-		neo4j.execCypher("match (c:TridentTaskSchedule {id:{id}}) set c.enabled={enabled}, c.updateTs=timestamp()",
-				"id", id, "enabled", b);
+		neo4j.execCypher(
+				"match (c:TridentTaskSchedule {scheduleId:{id}}) set c.enabled={enabled}, c.updateTs=timestamp()", "id",
+				id, "enabled", b);
 	}
 
 	public void scheduleTask(String crontab, Class<? extends DistributedTask> name) {
@@ -239,15 +295,17 @@ public class DistributedTaskScheduler implements TridentStartupListener {
 
 	public void scheduleTask(String crontab, String name, JsonNode n) {
 
-			if (n == null || n.isNull() || n.isMissingNode()) {
-				n = JsonUtil.createObjectNode();
-			}
-			String id = "id-" + Hashing.sha1().hashBytes(name.getBytes()).toString();
+		if (n == null || n.isNull() || n.isMissingNode()) {
+			n = JsonUtil.createObjectNode();
+		}
 
-			neo4j.execCypher(
-					"merge (c:TridentTaskSchedule {id:{id}}) ON CREATE set c.pattern={pattern}, c.task={name}, c+={props}",
-					"id", id, "pattern", crontab, "props", n, "name", name);
-	
+		String id = "sid-" + BaseEncoding.base32().encode(Hashing.sha1().hashBytes(name.getBytes()).asBytes())
+				.replace("=", "").toLowerCase();
+
+		neo4j.execCypher(
+				"merge (c:TridentTaskSchedule {scheduleId:{scheduleId}}) ON CREATE set c.cronExpression={cronExpression}, c.taskClass={taskClass}, c+={props},c.createTs=timestamp(),c.updateTs=timestamp()",
+				"scheduleId", id, "cronExpression", crontab, "props", n, "taskClass", name);
+
 	}
 
 	private void seedTasks() {
@@ -258,11 +316,50 @@ public class DistributedTaskScheduler implements TridentStartupListener {
 		scheduleTask("*/5 * * * *", AWSTerminatedNodeCleanupTask.class);
 		scheduleTask("* * * * *", ManagerELBCreationTask.class);
 		scheduleTask("* * * * *", ManagerDnsRegistrationTask.class);
+		scheduleTask("* * * * *", AutoScalingGroupNotificationRegistrationTask.class);
+		scheduleTask("* */23 * * *", AWSEventSetupTask.class);
+		scheduleTask("*/6 * * * *", LoadBalancerSetupTask.class);
+		scheduleTask("*/6 * * * *",AWSManagerASGScaleUpTask.class);
+	}
+
+	void oneTimeFixes() {
+		// one-time data-model fixes...can be removed soon
+		neo4j.execCypher("match (t:TridentTaskSchedule) where not exists (t.taskScheduleId) set t.taskScheduleId=t.id");
+		neo4j.execCypher(
+				"match (t:TridentTaskSchedule) where not exists (t.taskScheduleExpression) and exists(t.pattern) set t.taskScheduleExpression=t.pattern");
+		neo4j.execCypher(
+				"match (t:TridentTaskSchedule) where not exists (t.taskScheduleExpression) and exists(t.taskSchedulePattern) set t.taskScheduleExpression=t.taskSchedulePattern");
+		neo4j.execCypher("match (t:TridentTaskSchedule) where not exists (t.taskClass) set t.taskClass=t.task");
+		neo4j.execCypher(
+				"match (t:TridentTaskSchedule) where not exists (t.taskClass) set t.taskClass=t.taskClassName");
+		neo4j.execCypher(
+				"match (t:TridentTaskSchedule) where not exists (t.cronExpression) and exists(t.taskScheduleExpression) set t.cronExpression=t.taskScheduleExpression");
+		neo4j.execCypher(
+				"match (t:TridentTaskSchedule) where not exists (t.scheduleId) and exists(t.taskScheduleId) set t.scheduleId=t.taskScheduleId");
+
+		// delete scheduled tasks before a refactoring point
+		neo4j.execCypher(
+				"match (t:TridentTaskSchedule) where t.createTs is null or t.createTs<1509460091356 detach delete t");
+		neo4j.execCypher(
+				"match (t:TridentTaskSchedule) remove t.id, t.pattern,t.name,t.task,t.taskScheduleExpression,t.taskSchedulePattern,t.taskClassName,t.taskScheduleId");
 	}
 
 	@Override
 	public void onStart(ApplicationContext context) {
+
+		oneTimeFixes();
+
+		applyConstraints();
+
+		cron4j.addTaskCollector(new TridentTaskCollector());
+		cron4j.start();
+		this.executor = Executors.newFixedThreadPool(10);
+
 		seedTasks();
-		
+
+		Thread t = new ThreadFactoryBuilder().setNameFormat("DistributedTaskScheduler-%d").setDaemon(true).build()
+				.newThread(new IgniteQueueConsumer());
+
+		t.start();
 	}
 }

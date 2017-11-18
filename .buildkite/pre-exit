@@ -1,0 +1,5 @@
+#!/bin/bash
+
+docker kill -rm neo4j
+
+exit 0

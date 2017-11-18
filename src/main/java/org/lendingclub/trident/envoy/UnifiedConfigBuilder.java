@@ -56,7 +56,7 @@ class UnifiedConfigBuilder {
 	public void resolveClusters() {
 		try {
 			JsonNode n = JsonUtil.getObjectMapper()
-					.readTree(Trident.getApplicationContext().getBean(EnvoyClusterDiscoveryController.class)
+					.readTree(Trident.getApplicationContext().getBean(EnvoyDiscoveryController.class)
 							.clusterDiscovery(null, serviceCluster, serviceNode).getBody());
 
 			JsonNode arr = n.path("clusters");
@@ -104,7 +104,7 @@ class UnifiedConfigBuilder {
 						String routeConfigName = f.path("config").path("rds").path("route_config_name").asText();
 						if (!Strings.isNullOrEmpty(routeConfigName)) {
 							JsonNode n = JsonUtil.getObjectMapper().readTree(Trident.getApplicationContext()
-									.getBean(EnvoyRouteDiscoveryController.class)
+									.getBean(EnvoyDiscoveryController.class)
 									.routeDiscovery(null, routeConfigName, serviceCluster, serviceNode).getBody());
 
 							if (n.isObject()) {
@@ -125,7 +125,7 @@ class UnifiedConfigBuilder {
 			if (it.path("type").asText().equals("sds")) {
 				try {
 					JsonNode n = JsonUtil.getObjectMapper()
-							.readTree(Trident.getApplicationContext().getBean(EnvoyServiceDiscoveryController.class)
+							.readTree(Trident.getApplicationContext().getBean(EnvoyDiscoveryController.class)
 									.serviceDiscovery(null, it.path("service_name").asText()).getBody());
 
 					ArrayNode hosts = JsonUtil.createArrayNode();
@@ -158,7 +158,7 @@ class UnifiedConfigBuilder {
 			}
 
 			JsonNode n = JsonUtil.getObjectMapper()
-					.readTree(Trident.getApplicationContext().getBean(EnvoyListenerDiscoveryController.class)
+					.readTree(Trident.getApplicationContext().getBean(EnvoyDiscoveryController.class)
 							.listenerDiscovery(null, serviceCluster, serviceNode).getBody());
 			JsonNode listeners = n.path("listeners");
 			if (listeners.isArray()) {

@@ -3,14 +3,16 @@ package org.lendingclub.trident.envoy;
 import java.util.Optional;
 
 import org.lendingclub.trident.envoy.EnvoyServiceDiscoveryContext.Host;
-import org.lendingclub.trident.envoy.swarm.SwarmClusterDiscoveryDecorator;
+import org.lendingclub.trident.envoy.swarm.SwarmClusterDiscoveryInterceptor;
 import org.lendingclub.trident.util.JsonUtil;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.common.base.Preconditions;
+import com.google.common.base.Strings;
 
-public class EnvoyClusterDiscoveryContext extends AbstractEnvoyDiscoveryContext {
+public class EnvoyClusterDiscoveryContext extends EnvoyDiscoveryContext {
 
 	public class Cluster {
 		ObjectNode data = JsonUtil.createObjectNode();
@@ -36,21 +38,36 @@ public class EnvoyClusterDiscoveryContext extends AbstractEnvoyDiscoveryContext 
 			return this;
 		}
 		public Cluster withServiceName(String region, String env, String subEnv, String serviceGroup, String name) {
+			Preconditions.checkArgument(!Strings.isNullOrEmpty(region),"region not set");
+			Preconditions.checkArgument(!Strings.isNullOrEmpty(env),"env not set");
+			Preconditions.checkArgument(!Strings.isNullOrEmpty(subEnv),"subEnv not set");
+			Preconditions.checkArgument(!Strings.isNullOrEmpty(serviceGroup),"serviceGroup not set");
+			Preconditions.checkArgument(!Strings.isNullOrEmpty(name),"serviceName not set");
 			return withName(String.format("%s--%s--%s--%s--%s", region,env,subEnv,serviceGroup, name));
 		}
 		public Cluster withName(String region, String env, String subEnv, String serviceGroup, String name) {
+			Preconditions.checkArgument(!Strings.isNullOrEmpty(region),"region not set");
+			Preconditions.checkArgument(!Strings.isNullOrEmpty(env),"env not set");
+			Preconditions.checkArgument(!Strings.isNullOrEmpty(subEnv),"subEnv not set");
+			Preconditions.checkArgument(!Strings.isNullOrEmpty(serviceGroup),"serviceGroup not set");
+			Preconditions.checkArgument(!Strings.isNullOrEmpty(name),"serviceName not set");
 			return withName(String.format("%s--%s--%s--%s--%s", region,env,subEnv,serviceGroup, name));
 		}
 	
 
 	}
 	public Cluster addCluster(String region, String env, String subEnv, String serviceGroup, String name) {
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(region),"region not set");
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(env),"env not set");
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(subEnv),"subEnv not set");
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(serviceGroup),"serviceGroup not set");
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(name),"serviceName not set");
 		return addCluster(String.format("%s--%s--%s--%s--%s", region,env,subEnv,serviceGroup, name));
 	}
 	public Cluster addCluster(String name) {
 		
 		// envoy has a 60-char limitation on the cluster name
-		String shortenedName = SwarmClusterDiscoveryDecorator.shortenClusterName(name);
+		String shortenedName = SwarmClusterDiscoveryInterceptor.shortenClusterName(name);
 		
 		Cluster h = new Cluster().withName(shortenedName);
 		

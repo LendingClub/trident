@@ -13,6 +13,7 @@ import org.lendingclub.trident.event.EventSystem;
 import org.lendingclub.trident.swarm.SwarmAgentController;
 import org.lendingclub.trident.util.JsonUtil;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -28,7 +29,9 @@ public class SwarmAgentControllerIntegrationTest extends TridentIntegrationTest 
 	
 	@Autowired
 	EventSystem eventSystem;
-	
+
+	Logger logger = LoggerFactory.getLogger(SwarmAgentControllerIntegrationTest.class);
+
 	String val = "{\n" + 
 			"  \"dockerInfo\" : {\n" + 
 			"    \"ID\" : \"Z7NO:7ILT:YHNK:SOGS:M4LA:SSNL:2XML:HJR4:YROA:VPSL:JSGE:KBIT\",\n" + 
@@ -195,19 +198,23 @@ public class SwarmAgentControllerIntegrationTest extends TridentIntegrationTest 
 		List<String> errors = Lists.newArrayList();
 		
 		eventSystem.createConcurrentSubscriber(DockerEvent.class).withExecutor(Executors.newCachedThreadPool()).subscribe(it->{
-		
 			String swarmClusterId = it.getSwarmClusterId();
-			if (swarmClusterId.equals(n.path("dockerInfo").path("Swarm").path("Cluster").path("ID").asText())) {
-				latch.countDown();
-			}
-			if (!swarmClusterId.equals("irzpme6bo0l0qa5l7bb682tpj")) {
-				errors.add("swarmClusterId incorrect");
-			}
-			if (!swarmClusterId.equals(n.path("dockerInfo").path("Swarm").path("Cluster").path("ID").asText())) {
-				errors.add("swarmClusterId incorrect");
-			}
-			if (!it.getData().path("Actor").path("ID").asText().equals("7c9fc81a9864e5bd9182aa1a6034a605193303f19d581d3885853a5cb32fcd0f")) {
-				errors.add("payload incorrect");
+
+			if(it.getData().path("timeNano").asLong(-1) ==
+					n.path("dockerEvent").path("timeNano").asLong()) {
+
+				if (swarmClusterId.equals(n.path("dockerInfo").path("Swarm").path("Cluster").path("ID").asText())) {
+					latch.countDown();
+				}
+				if (!swarmClusterId.equals("irzpme6bo0l0qa5l7bb682tpj")) {
+					errors.add("swarmClusterId incorrect");
+				}
+				if (!swarmClusterId.equals(n.path("dockerInfo").path("Swarm").path("Cluster").path("ID").asText())) {
+					errors.add("swarmClusterId incorrect");
+				}
+				if (!it.getData().path("Actor").path("ID").asText().equals("7c9fc81a9864e5bd9182aa1a6034a605193303f19d581d3885853a5cb32fcd0f")) {
+					errors.add("payload incorrect");
+				}
 			}
 	
 		});

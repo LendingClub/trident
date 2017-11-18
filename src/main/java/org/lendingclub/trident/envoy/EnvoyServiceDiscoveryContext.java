@@ -9,7 +9,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.MoreObjects;
 
-public class EnvoyServiceDiscoveryContext extends AbstractEnvoyDiscoveryContext {
+public class EnvoyServiceDiscoveryContext extends EnvoyDiscoveryContext {
 
 	public class Host {
 		ObjectNode data;
