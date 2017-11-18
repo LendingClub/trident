@@ -1,0 +1,39 @@
+{
+    "Description": "Authorization plugin for Docker",
+    "Documentation": "https://github.com/LendingClub/trident/blob/master/trident/trident-authz/README.md",
+    "Entrypoint": [
+        "/trident-authz/plugin-init"
+    ],
+    "Env": [
+        {
+            "Description": "Trident Url",
+            "Name": "TRIDENT_URL",
+            "Settable": [
+                "value"
+            ],
+            "Value": "https://trident.example.com"
+        },
+        {
+            "Description": "whether authorization fails open",
+            "Name": "FAIL_OPEN",
+            "Settable": [
+                "value"
+            ],
+            "Value": "true"
+        }
+    ],
+    "Interface": {
+        "Socket": "trident-authz.sock",
+        "Types": [
+            "docker.authz/1.0"
+        ]
+    },
+    "Linux": {
+        "Capabilities": null,
+        "AllowAllDevices": true,
+        "Devices": null
+    },
+    "Network": {
+        "Type": "host"
+    }
+}

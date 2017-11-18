@@ -15,6 +15,6 @@ public class EnvoyBootstrapControllerTest {
 		request.setRequestURI("/a/b/c/");
 		
 		Assertions.assertThat(request.getRequestURL().toString()).isEqualTo("http://foobar:1234/a/b/c/");
-		Assertions.assertThat(EnvoyBootstrapController.getBaseUrl(request)).isEqualTo("http://foobar:1234");
+		Assertions.assertThat(EnvoyDiscoveryController.getBaseUrl(request)).isEqualTo("http://foobar:1234");
 	}
 }

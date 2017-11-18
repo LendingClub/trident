@@ -12,7 +12,9 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.Strings;
 
-public class EnvoyBootstrapConfigContext extends AbstractEnvoyDiscoveryContext {
+import net.lingala.zip4j.core.ZipFile;
+
+public class EnvoyBootstrapConfigContext extends EnvoyDiscoveryContext {
 
 	String environment;
 	String subEnvironment;
@@ -20,11 +22,17 @@ public class EnvoyBootstrapConfigContext extends AbstractEnvoyDiscoveryContext {
 	String serviceCluster;
 	String serviceZone;
 
+	protected ZipFile bundle;
+	
 	public EnvoyBootstrapConfigContext() {
 		super();
 
 	}
 
+	public EnvoyBootstrapConfigContext withConfigZipBundle(ZipFile zipFile) {
+		this.bundle = zipFile;
+		return this;
+	}
 	EnvoyBootstrapConfigContext withSkeleton(HttpServletRequest request) {
 		withServletRequest(request);
 		ObjectNode n = getConfig();
@@ -36,17 +44,14 @@ public class EnvoyBootstrapConfigContext extends AbstractEnvoyDiscoveryContext {
 			ObjectNode lds = JsonUtil.createObjectNode();
 			n.set("lds", lds);
 
-			lds.put("cluster", "service_discovery");
-			lds.put("refresh_delay_ms", TimeUnit.SECONDS.toMillis(30));
+			lds.put("cluster", EnvoyDiscoveryContext.TRIDENT_SDS_NAME);
+			lds.put("refresh_delay_ms", EnvoyDiscoveryContext.DEFAULT_REFRESH_INTERVAL_MILLIS);
 		}
-		/*
-		 * Within filter.config section: "rds":{ "cluster":"discovery",
-		 * "route_config_name":"foo", "refresh_delay_ms":5000 },
-		 */
+
 
 		ObjectNode admin = JsonUtil.createObjectNode();
-		admin.put("access_log_path", "/tmp/admin_access.log");
-		admin.put("address", "tcp://127.0.0.1:9901");
+		admin.put("access_log_path", DEFAULT_ADMIN_ACCESS_LOG);
+		admin.put("address", "tcp://0.0.0.0:9901");
 		n.set("admin", admin);
 
 		ObjectNode clusterManager = JsonUtil.createObjectNode();
@@ -58,7 +63,7 @@ public class EnvoyBootstrapConfigContext extends AbstractEnvoyDiscoveryContext {
 			ObjectNode cluster = JsonUtil.createObjectNode();
 			sds.set("cluster", cluster);
 
-			cluster.put("name", "service_discovery");
+			cluster.put("name", EnvoyDiscoveryContext.TRIDENT_SDS_NAME);
 			cluster.put("connect_timeout_ms", 250);
 			cluster.put("type", "strict_dns");
 			cluster.put("lb_type", "round_robin");
@@ -72,11 +77,11 @@ public class EnvoyBootstrapConfigContext extends AbstractEnvoyDiscoveryContext {
 
 			if (getBaseUrl().get().startsWith("https://")) {
 				ObjectNode sslContext = JsonUtil.createObjectNode();
-				sslContext.put("ca_cert_file", "/etc/ssl/certs/ca-certificates.crt");
+				sslContext.put("ca_cert_file", EnvoyDiscoveryContext.DEFAULT_CA_CERTS);
 				cluster.set("ssl_context", sslContext);
 			}
 
-			sds.put("refresh_delay_ms", TimeUnit.SECONDS.toMillis(30));
+			sds.put("refresh_delay_ms", EnvoyDiscoveryContext.DEFAULT_REFRESH_INTERVAL_MILLIS);
 		}
 
 		{
@@ -84,7 +89,7 @@ public class EnvoyBootstrapConfigContext extends AbstractEnvoyDiscoveryContext {
 			clusterManager.set("cds", cds);
 			ObjectNode cluster = JsonUtil.createObjectNode();
 			cds.set("cluster", cluster);
-			cluster.put("name", "cluster_discovery");
+			cluster.put("name", EnvoyDiscoveryContext.TRIDENT_CDS_NAME);
 			cluster.put("connect_timeout_ms", 250);
 			cluster.put("type", "strict_dns");
 			cluster.put("lb_type", "round_robin");
@@ -98,10 +103,10 @@ public class EnvoyBootstrapConfigContext extends AbstractEnvoyDiscoveryContext {
 
 			if (getBaseUrl().get().startsWith("https://")) {
 				ObjectNode sslContext = JsonUtil.createObjectNode();
-				sslContext.put("ca_cert_file", "/etc/ssl/certs/ca-certificates.crt");
+				sslContext.put("ca_cert_file", EnvoyDiscoveryContext.DEFAULT_CA_CERTS);
 				cluster.set("ssl_context", sslContext);
 			}
-			cds.put("refresh_delay_ms", TimeUnit.SECONDS.toMillis(30));
+			cds.put("refresh_delay_ms", EnvoyDiscoveryContext.DEFAULT_REFRESH_INTERVAL_MILLIS);
 		}
 
 		ArrayNode clusters = JsonUtil.createArrayNode();
@@ -121,4 +126,7 @@ public class EnvoyBootstrapConfigContext extends AbstractEnvoyDiscoveryContext {
 		}
 	}
 
+	public Optional<ZipFile> getConfigZipBundle() {
+		return Optional.ofNullable(bundle);
+	}
 }

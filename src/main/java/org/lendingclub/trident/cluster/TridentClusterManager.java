@@ -5,6 +5,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -14,6 +15,9 @@ import javax.annotation.PostConstruct;
 
 import org.lendingclub.mercator.core.SchemaManager;
 import org.lendingclub.neorx.NeoRxClient;
+import org.lendingclub.trident.Trident;
+import org.lendingclub.trident.event.EventSystem;
+import org.lendingclub.trident.event.TridentEvent;
 import org.lendingclub.trident.util.TridentStartupListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,6 +27,7 @@ import org.springframework.stereotype.Component;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Strings;
 
 @Component
 public class TridentClusterManager implements TridentStartupListener {
@@ -35,12 +40,27 @@ public class TridentClusterManager implements TridentStartupListener {
 	@Autowired
 	NeoRxClient neo4j;
 
+	@Autowired
+	EventSystem eventSystem;
+
+	static final long instanceStartTime = System.currentTimeMillis();
+
 	AtomicReference<String> leader = new AtomicReference<>();
 
-	// This will keep track of the last time we have observed a leader.  
-	long lastLeaderObserved = System.currentTimeMillis(); 
-	boolean paused=false;
-	
+	// This will keep track of the last time we have observed a leader.
+	long lastLeaderObserved = System.currentTimeMillis();
+	boolean paused = false;
+
+	public static final long HEARTBEAT_TIMEOUT_MILLIS=TimeUnit.SECONDS.toMillis(10);
+	public static class LeaderElectedEvent extends TridentEvent {
+
+		public LeaderElectedEvent() {
+			super();
+			withMessage("Trident instance " + getEventSource() + " has been elected leader");
+		}
+
+	}
+
 	AtomicReference<BooleanSupplier> ref = new AtomicReference<>(new BooleanSupplier() {
 
 		@Override
@@ -54,21 +74,21 @@ public class TridentClusterManager implements TridentStartupListener {
 		ref.set(supplier);
 	}
 
-
 	public String getTridentInstallationId() {
 
 		if (installationId.get() != null) {
 			return installationId.get();
 		}
-		JsonNode n = neo4j.execCypher("match (c:Config {type:'trident',name:'installation'}) return c")
+
+		JsonNode n = neo4j.execCypher("match (c:Config {type:'trident',name:'default'}) return c")
 				.blockingFirst(NullNode.getInstance());
 		String val = n.path("installationId").asText(null);
+
 		if (val != null) {
 			this.installationId.set(val);
 		} else {
 			val = neo4j
-					.execCypher(
-							"merge (c:Config {type:'trident',name:'installation'}) set c.installationId={id} return c",
+					.execCypher("merge (c:Config {type:'trident',name:'default'}) set c.installationId={id} return c",
 							"id", UUID.randomUUID().toString())
 					.blockingFirst(NullNode.getInstance()).path("installationId").asText(null);
 			if (val == null) {
@@ -81,7 +101,6 @@ public class TridentClusterManager implements TridentStartupListener {
 		return this.installationId.get();
 	}
 
-
 	public String getInstanceId() {
 		return instanceId;
 	}
@@ -90,16 +109,27 @@ public class TridentClusterManager implements TridentStartupListener {
 		String v = leader.get();
 		return v != null && v.equals(getInstanceId());
 	}
+
 	public Optional<String> getIpAddress() {
 		try {
 			String val = Inet4Address.getLocalHost().getHostAddress();
 			return Optional.ofNullable(val);
-		}
-		catch (Exception e) {
-			logger.warn("problem getting ip address: {}",e.toString());
+		} catch (Exception e) {
+			logger.warn("problem getting ip address: {}", e.toString());
 		}
 		return Optional.empty();
 	}
+
+	public Optional<String> getHostName() {
+		try {
+			String val = Inet4Address.getLocalHost().getCanonicalHostName();
+			return Optional.ofNullable(val);
+		} catch (Exception e) {
+			logger.warn("problem getting hostname: {}", e.toString());
+		}
+		return Optional.empty();
+	}
+
 	protected void forceElection() {
 		logger.info("forcing election");
 		leader.set("NOT_FOUND");
@@ -114,32 +144,64 @@ public class TridentClusterManager implements TridentStartupListener {
 		// mark all the nodes with a random string. We'll use this as a key when
 		// we nominate ourself as leader.
 		String electionId = UUID.randomUUID().toString();
-		neo4j.execCypher("match (t:TridentClusterState) set t.electionId={electionId}, t.leader=false", "electionId",
+		neo4j.execCypher("match (t:TridentClusterState) set t.electionId={electionId}, t.electionTs=timestamp(), t.leader=false", "electionId",
 				electionId);
 
-		// now mark ourselves as a leader, but only if the electionId matches
-		neo4j.execCypher(
-				"match (t:TridentClusterState) where t.electionId={electionId} and t.instanceId={instanceId} set t.leader=true",
-				"electionId", electionId, "instanceId", getInstanceId());
+		if (isEligibleLeader()) {
+			// now mark ourselves as a leader, but only if the electionId matches
+			neo4j.execCypher(
+					"match (t:TridentClusterState) where t.electionId={electionId} and t.instanceId={instanceId} set t.leader=true",
+					"electionId", electionId, "instanceId", getInstanceId());
+		}
 
+		AtomicInteger leaderCount = new AtomicInteger(0);
+		AtomicBoolean electedSelf = new AtomicBoolean(false);
 		neo4j.execCypher(
 				"match (t:TridentClusterState) return t.instanceId as instanceId,t.electionId as electionId,t.leader as leader, timestamp()-t.heartbeat as lastHeartbeatInterval")
 				.forEach(it -> {
-					logger.info("cluster state: " + it + " "
-							+ (getInstanceId().equals(it.path("instanceId").asText("NOT_FOUND")) ? "*" : ""));
 					if (it.path("leader").asBoolean(false) == true) {
-						logger.info("congratulations, we have been elected the leader!");
-						leader.set(it.path("instanceId").asText());
+						leaderCount.incrementAndGet();
+						if (it.path("instanceId").asText().equals(getInstanceId())) {
+							electedSelf.set(true);
+						}
 					}
 				});
+
+		if (electedSelf.get()) {
+			if (leaderCount.get() == 1) {
+				logger.info("congratulations, we have been elected the leader!");
+				new LeaderElectedEvent().publish();
+				leader.set(getInstanceId());
+			} else {
+				// un-nominate ourself
+				neo4j.execCypher("match (t:TridentClusterState) where t.instanceId={instanceId} set t.leader=false",
+						"instanceId", getInstanceId());
+			}
+		}
+
 	}
 
 	protected void manageClusterState() {
-		neo4j.execCypher("merge (t:TridentClusterState {instanceId:{instanceId}}) set t.heartbeat=timestamp(),t.ipAddress={ip}",
-				"instanceId", getInstanceId(),"ip",getIpAddress().orElse(""));
+		String shortRevision = Trident.getInstance().getVersion().getShortRevision();
+		String version = Trident.getInstance().getVersion().getVersion();
+
+		neo4j.execCypher(
+				"match (t:TridentClusterState) where NOT EXISTS(t.heartbeat) OR timestamp()-t.heartbeat>{millis} delete t",
+				"millis", TimeUnit.MINUTES.toMillis(1));
+		neo4j.execCypher(
+				"match (t:TridentClusterState) where NOT EXISTS(t.heartbeat) OR timestamp()-t.heartbeat>{millis} set t.leader=false",
+				"millis", HEARTBEAT_TIMEOUT_MILLIS);
+		neo4j.execCypher(
+				"merge (t:TridentClusterState {instanceId:{instanceId}}) on create set t.leader=false set t.heartbeat=timestamp(),t.ipAddress={ip},t.hostname={hostname}, "
+						+ "t.version={version}, t.shortRevision={shortRevision}," + "t.eligibleLeader={eligibleLeader},"
+						+ "t.instanceStartTs={instanceStartTs} ",
+				"instanceId", getInstanceId(), "hostname", getHostName().orElse(""), "ip", getIpAddress().orElse(""),
+				"eligibleLeader", isEligibleLeader(), "version", version, "shortRevision", shortRevision,
+				"instanceStartTs", instanceStartTime);
 
 		AtomicLong leaderHeartbeatInterval = new AtomicLong(Long.MAX_VALUE);
 		AtomicInteger leaderCount = new AtomicInteger();
+		AtomicReference<String> discoveredLeader = new AtomicReference<String>(null);
 		neo4j.execCypher(
 				"match (t:TridentClusterState) return t.instanceId as instanceId,t.electionId as electionId,t.leader as leader, timestamp()-t.heartbeat as lastHeartbeatInterval")
 				.forEach(it -> {
@@ -149,26 +211,38 @@ public class TridentClusterManager implements TridentStartupListener {
 						long heartbeatInterval = it.path("lastHeartbeatInterval").asLong(TimeUnit.DAYS.toMillis(1));
 						leaderHeartbeatInterval.set(heartbeatInterval);
 						lastLeaderObserved = System.currentTimeMillis();
+						discoveredLeader.set(it.path("instanceId").asText(null));
 					}
 
 				});
 		logger.debug("# of leaders: {}", leaderCount.get());
-		if (leaderCount.get() != 1) {
+
+		if (leaderCount.get() == 0) {
+			discoveredLeader.set(null);
 			forceElection();
-		} else if (leaderHeartbeatInterval.get() > TimeUnit.SECONDS.toMillis(45)) {
+		} else if (leaderCount.get() == 1) {
+			if (leaderHeartbeatInterval.get() > HEARTBEAT_TIMEOUT_MILLIS) {
+				discoveredLeader.set(null);
+				forceElection();
+			}
+
+			if (getInstanceId().equals(Strings.nullToEmpty(leader.get()))) {
+				if (isEligibleLeader()) {
+					leader.set(discoveredLeader.get());
+				} else {
+					discoveredLeader.set(null);
+					forceElection();
+				}
+			}
+
+		} else if (leaderCount.get() > 1) {
+			discoveredLeader.set(null);
 			forceElection();
 		}
-		if (isLeader() && isEligibleLeader()==false) {
-			// I am the leader but not actually eligible
-			forceElection();
+
+		if (discoveredLeader.get()!=null) {
+			leader.set(discoveredLeader.get());
 		}
-		if (System.currentTimeMillis()-lastLeaderObserved>TimeUnit.MINUTES.toMillis(5)) {
-			logger.warn("trident cluster={} has no leader!",getTridentInstallationId());
-		}
-		// delete old cruft
-		neo4j.execCypher(
-				"match (t:TridentClusterState) where NOT EXISTS(t.heartbeat) OR timestamp()-t.heartbeat>{millis} delete t",
-				"millis", TimeUnit.MINUTES.toMillis(15));
 	}
 
 	@PostConstruct
@@ -190,9 +264,8 @@ public class TridentClusterManager implements TridentStartupListener {
 			}
 
 		};
-		
-	
-		Executors.newSingleThreadScheduledExecutor().scheduleWithFixedDelay(r, 30, 10, TimeUnit.SECONDS);
+
+		Executors.newSingleThreadScheduledExecutor().scheduleWithFixedDelay(r, 1, 1, TimeUnit.SECONDS);
 	}
 
 	@Override
@@ -204,10 +277,9 @@ public class TridentClusterManager implements TridentStartupListener {
 
 	public boolean isEligibleLeader() {
 		BooleanSupplier supplier = ref.get();
-		if (supplier==null) {
+		if (supplier == null) {
 			return true;
-		}
-		else {
+		} else {
 			return supplier.getAsBoolean();
 		}
 	}

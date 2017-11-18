@@ -4,6 +4,7 @@
 bin/
 *.jar
 src/main/docker/trident/lib/
+trident-version.properties
 
 ### STS ###
 .apt_generated

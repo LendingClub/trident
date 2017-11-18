@@ -9,15 +9,17 @@ import java.util.concurrent.TimeUnit;
 
 import javax.annotation.PostConstruct;
 
-import org.lendingclub.trident.ProxyManager;
-import org.lendingclub.trident.ProxyManager.ProxyConfig;
 import org.lendingclub.trident.TridentException;
 import org.lendingclub.trident.config.ConfigManager;
 import org.lendingclub.trident.util.JsonUtil;
+import org.lendingclub.trident.util.ProxyManager;
+import org.lendingclub.trident.util.ProxyManager.ProxyConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.util.StopWatch;
 
+import com.amazonaws.AmazonWebServiceClient;
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.PredefinedClientConfigurations;
 import com.amazonaws.auth.AWSCredentialsProvider;
@@ -32,12 +34,16 @@ import com.amazonaws.regions.Regions;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenService;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClient;
 import com.amazonaws.services.securitytoken.AWSSecurityTokenServiceClientBuilder;
+import com.amazonaws.services.securitytoken.model.AWSSecurityTokenServiceException;
 import com.amazonaws.services.securitytoken.model.GetCallerIdentityRequest;
 import com.amazonaws.services.securitytoken.model.GetCallerIdentityResult;
+import com.amazonaws.services.sqs.AmazonSQS;
+import com.amazonaws.services.sqs.AmazonSQSClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
+import com.google.common.base.Stopwatch;
 import com.google.common.base.Strings;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
@@ -49,55 +55,65 @@ import com.google.common.collect.Maps;
 
 public class AWSAccountManager {
 
-	public static abstract class CredentialsSupplier  {
+	Cache<String,AmazonWebServiceClient> clientCache = CacheBuilder.newBuilder().expireAfterWrite(5, TimeUnit.MINUTES).build();
+	
+	public static abstract class CredentialsSupplier {
 
 		static Logger logger = LoggerFactory.getLogger(CredentialsSupplier.class);
 		JsonNode n;
-		
-		private Supplier<List<Regions>> regionSupplier=null;
-		
+
+		private Supplier<List<Regions>> regionSupplier = null;
+
 		public CredentialsSupplier(JsonNode n) {
 			this.n = n;
-			
-			regionSupplier=Suppliers.memoize(new RegionListSupplier());
+
+			regionSupplier = Suppliers.memoize(new RegionListSupplier());
 		}
-		
+
 		public abstract Optional<String> getAccount();
+
 		class RegionListSupplier implements Supplier<List<Regions>> {
 			@Override
 			public List<Regions> get() {
 				return AWSAccountManager.getRegionsFromConfig(n);
 			}
 		}
+
 		public JsonNode getConfig() {
 			return n;
 		}
-		
+
 		public Optional<String> getRoleArn() {
 			return optionalString("roleArn");
 		}
+
 		public Optional<String> getSourceAccountName() {
 			return optionalString("sourceAccountName");
 		}
-		
+
 		public List<Regions> getRegions() {
-	
+
 			return regionSupplier.get();
-			
+
 		}
+
 		public Optional<String> getSecretKey() {
 			return optionalString("secretKey");
 		}
+
 		public Optional<String> getAccessKey() {
 			return optionalString("accessKey");
 		}
+
 		private Optional<String> optionalString(String x) {
-		
+
 			return Optional.ofNullable(Strings.emptyToNull(Strings.nullToEmpty(n.path(x).asText()).trim()));
 		}
+
 		public Regions getDefaultRegion() {
 			return getRegions().get(0);
 		}
+
 		public abstract AWSCredentialsProvider get();
 
 	}
@@ -130,24 +146,30 @@ public class AWSAccountManager {
 			this.provider = p;
 		}
 
-	
 		public AWSCredentialsProvider get() {
 			return provider;
 		}
 
-	
 		public Optional<String> getAccount() {
 			if (account != null) {
 				return Optional.of(account);
 			}
+			String exceptionLogMessage = "problem getting account";
 			try {
 				AWSSecurityTokenService client = applyProxy(AWSSecurityTokenServiceClientBuilder.standard()
 						.withRegion(getDefaultRegion()).withCredentials(get()), getConfig().path("name").asText())
 								.build();
 				GetCallerIdentityResult result = client.getCallerIdentity(new GetCallerIdentityRequest());
 				account = result.getAccount();
+			} catch (AWSSecurityTokenServiceException e) {
+				if (Strings.nullToEmpty(e.getErrorCode()).equals("ExpiredToken")) {
+					logger.warn(exceptionLogMessage+" - "+e.toString());
+				}
+				else {
+					logger.warn(exceptionLogMessage, e);
+				}
 			} catch (RuntimeException e) {
-				logger.warn("problem", e);
+				logger.warn(exceptionLogMessage, e);
 			}
 			return Optional.ofNullable(account);
 		}
@@ -158,7 +180,6 @@ public class AWSAccountManager {
 
 		String account = null;
 
-	
 		public Optional<String> getAccount() {
 			if (account != null) {
 				return Optional.of(account);
@@ -169,8 +190,18 @@ public class AWSAccountManager {
 								.build();
 				GetCallerIdentityResult result = client.getCallerIdentity(new GetCallerIdentityRequest());
 				account = result.getAccount();
-			} catch (RuntimeException e) {
+			} 
+			catch (AWSSecurityTokenServiceException e) {
+				if (Strings.nullToEmpty(e.getErrorCode()).equals("ExpiredToken")) {
+					logger.warn("problem - "+e.toString());
+				}
+				else {
+					logger.warn("problem", e);
+				}
+			}
+			catch (RuntimeException e) {
 				logger.warn("problem", e);
+				
 			}
 			return Optional.ofNullable(account);
 		}
@@ -179,7 +210,6 @@ public class AWSAccountManager {
 			super(n);
 		}
 
-	
 		public AWSCredentialsProvider get() {
 
 			if (!Strings.isNullOrEmpty(getConfig().path("roleArn").asText())) {
@@ -245,8 +275,41 @@ public class AWSAccountManager {
 		supplierMap.put(name, supplier);
 	}
 
+	public <R extends AmazonWebServiceClient> R getClient(String name, Class<? extends AwsClientBuilder> x) {
+		return getClient(name,x,(Regions) null);
+	}
+	public <R extends AmazonWebServiceClient> R getClient(String name, Class<? extends AwsClientBuilder> x, String region) {
+		return getClient(name,x,Regions.fromName(region));
+	}
+	public <R extends AmazonWebServiceClient> R getClient(String name, Class<? extends AwsClientBuilder> x, Regions region) {
+		if (region == null) { 
+			region = Regions.fromName(getDefaultRegion(name));
+		}
+		
+		String cacheKey = ""+name+"-"+x.getName()+"-"+region.toString();
+		AmazonWebServiceClient client = clientCache.getIfPresent(cacheKey);
+		if (client!=null) {
+			return (R) client;
+		}
+		AwsClientBuilder builder = newClientBuilder(name,x).withRegion(region);
+
+		client = (AmazonWebServiceClient) builder.build();
+		clientCache.put(cacheKey, client);
+		return (R) client;
+	}
+	
+	
+	/** 
+	 * Creates an AWS client instance.  
+	 * 
+	 * getClient() should be used in preference to this method wherever possible
+	 * @param name
+	 * @param clazz
+	 * @return
+	 */
 	@SuppressWarnings({ "rawtypes", "unchecked" })
 	public <T extends AwsClientBuilder> T newClientBuilder(String name, Class<T> clazz) {
+		Stopwatch sw = Stopwatch.createStarted();
 		try {
 			Preconditions.checkArgument(!Strings.isNullOrEmpty(name), "account name/number must be set");
 			Preconditions.checkArgument(clazz != null, "builder class must be set");
@@ -282,13 +345,18 @@ public class AWSAccountManager {
 		} catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
 			throw new TridentException(e);
 		}
+		finally {
+			logger.info("create client builder took {} ms",sw.elapsed(TimeUnit.MILLISECONDS));
+		}
 
 	}
 
 	protected String getDefaultRegion(String accountName) {
 		// getRegionsFromConfig is guaranteed to return a non-empty list
 		// We consider the first entry in the list to be the "default" region.
-		return getRegionsFromConfig(configManager.getConfig("aws", resolveAccountName(accountName)).orElse(JsonUtil.createObjectNode())).get(0).getName();
+		return getRegionsFromConfig(
+				configManager.getConfig("aws", resolveAccountName(accountName)).orElse(JsonUtil.createObjectNode()))
+						.get(0).getName();
 	}
 
 	public ClientConfiguration getClientConfiguration(String name) {
@@ -311,11 +379,10 @@ public class AWSAccountManager {
 	}
 
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	protected <A extends AwsClientBuilder, B> AwsClientBuilder<A, B> applyProxy(AwsClientBuilder<A, B> x,
-			String name) {
-		
+	protected <A extends AwsClientBuilder, B> AwsClientBuilder<A, B> applyProxy(AwsClientBuilder<A, B> x, String name) {
+
 		return x.withClientConfiguration(getClientConfiguration(name));
-		
+
 	}
 
 	protected AWSSecurityTokenServiceClient createSTSClient(String name) {
@@ -375,7 +442,7 @@ public class AWSAccountManager {
 
 		Optional<String> val = getSuppliers().entrySet().stream().filter(p -> {
 			Optional<String> accountNumber = p.getValue().getAccount();
-			logger.info("{} ==> {}",p.getKey(),accountNumber);
+			logger.info("{} ==> {}", p.getKey(), accountNumber);
 			return accountNumber.isPresent() && accountNumber.get().equals(s);
 		}).map(f -> {
 			return f.getKey();
@@ -410,32 +477,30 @@ public class AWSAccountManager {
 			}
 		});
 		if (rl.isEmpty()) {
-			
-			
-			// If we are in AWS, this will use the region where this code is executing. 
-			// If we are not in AWS,  default to the AWS default of Regions.DEFAULT_REGION, which 
+
+			// If we are in AWS, this will use the region where this code is
+			// executing.
+			// If we are not in AWS, default to the AWS default of
+			// Regions.DEFAULT_REGION, which
 			// is us-west-2...at least for now.
-			Regions r= null;
+			Regions r = null;
 			Region region = Regions.getCurrentRegion();
-			if (region==null) {
+			if (region == null) {
 				r = Regions.DEFAULT_REGION;
-			}
-			else {
+			} else {
 				r = Regions.fromName(region.getName());
 			}
-			logger.info("regions not specified on aws config for {} ... defaulting to {}",n.path("name").asText(),r.getName());
+			logger.info("regions not specified on aws config for {} ... defaulting to {}", n.path("name").asText(),
+					r.getName());
 			rl.add(r);
-			
+
 		}
 		return rl;
 	}
-
 
 	public String lookupAccountNumber(String nameOrNumber) {
 		String name = resolveAccountName(nameOrNumber);
 		return getSuppliers().get(name).getAccount().get();
 	}
-	
-	
 
 }

@@ -17,7 +17,7 @@ import com.google.common.collect.Lists;
 public class EnvoyClusterDiscoveryControllerIntegrationTest extends TridentIntegrationTest {
 
 	@Autowired
-	EnvoyClusterDiscoveryController cds;
+	EnvoyDiscoveryController cds;
 
 	@Autowired
 	NeoRxClient neo4j;
@@ -66,6 +66,6 @@ public class EnvoyClusterDiscoveryControllerIntegrationTest extends TridentInteg
 		n.path("clusters").iterator().forEachRemaining(it -> {
 			serviceNames.add(it.path("service_name").asText());
 		});
-		Assertions.assertThat(serviceNames).containsExactly("uw2--prod--feature1--junit--foo","uw2--prod--feature1--junit--foo1");
+		Assertions.assertThat(serviceNames).containsExactlyInAnyOrder("uw2--prod--feature1--junit--foo","uw2--prod--feature1--junit--foo1");
 	}
 }

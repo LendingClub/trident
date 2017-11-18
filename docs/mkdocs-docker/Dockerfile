@@ -1,9 +1,9 @@
 FROM ubuntu
 
 RUN apt-get update
-RUN apt-get install python-pip python-dev build-essential libyaml-dev git -y
+RUN apt-get install python-pip python-dev build-essential libyaml-dev -y
 
-RUN pip install mkdocs
+RUN pip install mkdocs mkdocs-material
 
 ADD init.sh /init.sh
 

@@ -17,21 +17,7 @@ public class AWSAccountManagerImplTest extends TridentIntegrationTest {
 	@Autowired
 	AWSAccountManager clientManager;
 
-	@Test
-	@Ignore
-	public void testIt() {
 
-		
-
-		for (int i = 0; i < 10; i++) {
-			
-			System.out.println(clientManager.getSuppliers().get("lab").getAccount());
-			
-			clientManager.newClientBuilder("lab", AmazonEC2ClientBuilder.class).build();
-
-		}
-
-	}
 	
 	@Test
 	public void testRegions() {

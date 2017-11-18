@@ -27,7 +27,7 @@ mount /var/lib/docker
 fi
 ## End AWS-specific setup
 
-yum install -y yum-utils unzip
+yum install -y yum-utils unzip bridge-utils
 
 yum-config-manager --enable extras
 yum-config-manager --add-repo {{dockerRepoUrl}}
@@ -78,23 +78,41 @@ fi
 cat <<EOF >/etc/docker/daemon.json
 {
   $REGISTRY_MIRROR_TUPLE
+  "ipv6": false,
   "hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2376"],
   "tlsverify":true,
   "tlscert":"/etc/docker/trident/tls/cert.pem",
   "tlskey":"/etc/docker/trident/tls/key.pem",
-  "tlscacert":"/etc/docker/trident/tls/ca.pem"
+  "tlscacert":"/etc/docker/trident/tls/ca.pem",
+  "bip":"${DOCKER_BRIDGE_IP}"
 }
 EOF
 cat /etc/docker/daemon.json
+
+if [ -x /usr/sbin/firewalld ]; then
+	# turn off firewalld for now
+	# It is really a customer-specific thing as to how/when to enable
+	systemctl stop firewalld
+	systemctl disable firewalld
+	firewall-cmd --add-port=2376/tcp --permanent
+	firewall-cmd --add-port=2377/tcp --permanent
+	firewall-cmd --add-port=7946/tcp --permanent
+	firewall-cmd --add-port=7946/udp --permanent
+	firewall-cmd --add-port=4789/udp --permanent
+    firewall-cmd --reload
+fi
 
 
 systemctl start docker.service
 systemctl enable docker.service
 
+docker network create --subnet ${DOCKER_GWBRIDGE_SUBNET} --opt com.docker.network.bridge.name=docker_gwbridge --opt com.docker.network.bridge.enable_icc=false docker_gwbridge
+
+
 curl -s -f -k -X POST {{tridentBaseUrl}}/api/trident/provision/swarm-join \
 -F ipAddr=${IP_ADDR} \
 -F id={{id}} \
--F nodeType={{nodeType}} \
+-F swarmNodeType={{swarmNodeType}} \
 -F awsInstanceId=${AWS_INSTANCE_ID} \
   >${NEXT_SCRIPT} || exit 99
   

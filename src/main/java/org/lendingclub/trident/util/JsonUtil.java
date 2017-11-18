@@ -34,6 +34,9 @@ public class JsonUtil {
 		}
 	}
 
+	public static void logInfo(String message, Object n) {
+		logInfo(JsonUtil.class,message,n);
+	}
 	public static void logInfo(Logger logger, String message, Object n) {
 		try {
 			if (logger!=null && logger.isInfoEnabled()) {

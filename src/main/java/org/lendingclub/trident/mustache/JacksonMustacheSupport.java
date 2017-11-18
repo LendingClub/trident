@@ -109,7 +109,7 @@ public class JacksonMustacheSupport {
 				return n;
 			}
 			if (n.isNull() || n.isMissingNode()) {
-				return "";
+				return null;
 			}
 			return n.asText();
 		}

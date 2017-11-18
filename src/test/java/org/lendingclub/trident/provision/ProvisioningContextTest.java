@@ -9,7 +9,7 @@ public class ProvisioningContextTest extends TridentIntegrationTest {
 	
 	@Test
 	public void testIt() {
-		ProvisioningContext c = new ProvisioningContext();
+		SwarmNodeProvisionContext c = new SwarmNodeProvisionContext();
 		
 		
 		
@@ -22,7 +22,7 @@ public class ProvisioningContextTest extends TridentIntegrationTest {
 	
 	@Test
 	public void testExports() {
-		ProvisioningContext c = new ProvisioningContext();
+		SwarmNodeProvisionContext c = new SwarmNodeProvisionContext();
 		Assertions.assertThat(c.getExports()).contains("http_proxy");
 		Assertions.assertThat(c.getExports()).doesNotContain("foo");
 		

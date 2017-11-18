@@ -31,7 +31,7 @@ public class IncrementalScannerEventConsumer implements Consumer<DockerEvent> {
 	public void accept(DockerEvent t) throws Exception {
 		try {
 			JsonNode n = t.getEnvelope();
-			JsonUtil.logInfo(getClass(), "received event", n);
+			JsonUtil.logDebug(getClass(), "received event", n);
 			
 
 			String scope = n.path("data").path("scope").asText();
@@ -129,7 +129,8 @@ public class IncrementalScannerEventConsumer implements Consumer<DockerEvent> {
 
 	protected void rescanNode(DockerEvent event) {
 		logger.info("rescanning cluster in response to node update...");
-		JsonUtil.logInfo(getClass(), "EVENT",event.getData());
+		JsonUtil.logInfo(getClass(), "NODE_EVENT",event.getData());
+		// need to look at the event structure for this
 	
 	}
 	protected void onNodeUpdate(DockerEvent event) {

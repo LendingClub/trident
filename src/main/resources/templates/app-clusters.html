@@ -1,0 +1,160 @@
+
+{{>header}}
+<!-- page content -->
+<div class="right_col" role="main">
+  <div class="">
+    <div class="page-title">
+      <div class="title_left">
+        <h3>App Clusters</h3>
+      </div>
+    </div>
+    <div class="clearfix"></div>  
+    {{#message}}
+    <div class="alert alert-{{label}}" style="display:{{displayMessage}}">
+       <ul class="fa-ul">
+          <li> <i class="fa fa-info-circle fa-lg fa-li"></i>{{message}}</li>
+       </ul>
+    </div>
+    {{/message}}
+    <div class="row">
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="x_panel">
+          <div class="x_title">
+           <h2>Create App Cluster</h2>
+           <div class="clearfix"></div>
+          </div>
+          <div class="x_content"> 
+             <button type="button" class="btn btn-primary" id="create-cluster-button">Create New Cluster</button>
+             <div class="cluster-creation-form" id="cluster-creation-form-div" style="display:none;">
+                <form class="form-horizontal form-label-left" name="create-cluster-form" id="create-cluster-form" action="/app-cluster/create" method="POST">
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="appId">
+                       App ID <span class="required">*</span>
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <input type="text" list="appIdList" id="appId" name="appId" required="required" class="form-control col-md-7 col-xs-12">
+                       <datalist id="appIdList">
+                         {{#appIdList}}<option value="{{this}}"></option>{{/appIdList}}
+                       </datalist>
+                    </div>
+                  </div>
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="environment">
+                       Environment <span class="required">*</span>
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <input type="text" list="envList" id="environment" name="environment" required="required" class="form-control col-md-7 col-xs-12">
+                       <datalist id="envList">
+                         {{#envList}}<option value="{{this}}"></option>{{/envList}}
+                       </datalist>
+                    </div>
+                  </div>
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="subEnvironment">
+                       Sub Environment <span class="required">*</span>
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <input type="text" list="subEnvList" id="subEnvironment" name="subEnvironment" required="required" class="form-control col-md-7 col-xs-12">
+                       <datalist id="subEnvList">
+                        {{#subEnvList}}
+                        <option value="{{this}}"></option>
+                        {{/subEnvList}}
+                      </datalist>
+                    </div>
+                  </div>
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="region">
+                       Region <span class="required">*</span>
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <select type="text" list="regionList" id="region" name="region" required="required" class="form-control col-md-7 col-xs-12">
+                         <option value="">Select...</option>
+                         {{#regionList}}<option value="{{this}}">{{this}}</option>{{/regionList}}
+                       </select>
+                    </div>
+                  </div>
+                  <div class="item form-group">
+                    <label class="control-label col-md-3 col-sm-3 col-xs-12" for="swarm">
+                       Swarm <span class="required">*</span>
+                    </label>
+                    <div class="col-md-6 col-sm-6 col-xs-12">
+                       <select class="form-control col-md-7 col-xs-12" id="swarm" name="swarm" required="required">
+                          <option value="">Select...</option>
+                        {{#swarms}}
+                            <option value="{{name}}">{{name}}</option>
+                        {{/swarms}}
+                       </select>
+                    </div>
+                  </div>
+                  <div class="ln_solid"></div>
+                  <div class="form-group">
+                     <div class="col-md-6 col-md-offset-3">
+                        <button type="button" class="btn btn-primary" id="cancel-create-cluster"> Cancel</button>
+                        <button type="submit" class="btn btn-success" id="submit-create-cluster"> Submit</button>
+                     </div>
+                  </div>
+                </form> <!-- end of create app cluster form -->
+             </div><!-- end of create cluster form -->                    
+          </div>                
+        </div>
+      </div> <!-- End of create app cluster form -->
+      <div class="col-md-12 col-sm-12 col-xs-12">
+        <div class="x_panel">         
+          <div class="x_content">      
+          <table id="datatable" class="table table-striped table-bordered table-condensed">
+            <thead>
+              <tr>           
+                <th>App</th>
+                <th>Region</th>               
+                <th>Environment</th>
+                <th>SubEnvironment</th>
+                <th>Swarm</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            {{#clusters}}
+              <tr>    
+                <td>{{appId}}</td>
+                <td>{{region}}</td>
+                <td>{{environment}}</td>
+                <td>{{subEnvironment}}</td>
+                <td>{{swarm}}</td>
+                <td>
+		            <a href="/app-clusters/{{appClusterId}}"  class="btn btn-xs btn-info">View Details</a>
+		            <a href="/app-clusters/{{appClusterId}}/delete" class="btn btn-xs btn-danger"> Delete Cluster</a>
+	            </td> 
+              </tr>
+             {{/clusters}}
+            </tbody>
+          </table>
+        
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script type="text/javascript">
+  $(document).ready(function() {
+	  $("#cluster-creation-form-div").hide();
+
+	  // show cluster form on click create-cluster-button
+	  $("#create-cluster-button").click(function() {
+		  $("#cluster-creation-form-div").show();
+		  $("#create-cluster-button").hide();
+	  });
+	  
+	  // hide create-cluster-form on cancel
+	  $("#cancel-create-cluster").click(function() {
+		  document.getElementById("create-cluster-form").reset();
+		  $("#cluster-creation-form-div").hide();
+		  $("#create-cluster-button").show();
+	  });
+  });
+</script>
+<!-- /page content -->
+{{>footer}}
+
+
+

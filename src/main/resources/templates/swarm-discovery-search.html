@@ -1,0 +1,145 @@
+  
+  
+{{>header}}
+
+        <!-- page content -->
+        <div class="right_col" role="main">
+          
+          
+          <div class="row">
+              <div class="col-md-12 col-sm-12 col-xs-12">
+<div class="x_panel">
+                  <div class="x_title">
+                    <h2>Service Discovery Search<small></small></h2>
+              
+                    <div class="clearfix"></div>
+                  </div>
+                  <div class="x_content">
+                    <br />
+                    <form class="form-horizontal form-label-left">
+
+                      <div class="form-group">
+                        <label class="control-label col-md-2 col-sm-2 col-xs-12">Environment</label>
+                        <div class="col-md-3 col-sm-3 col-xs-12">
+                    
+                          <input list="envList" type="text" class="form-control" id="env" name="env" placeholder="Select..." value="{{#env}}{{this}}{{/env}}" />
+        					<datalist id="envList">
+                    
+        					    {{#envList}}<option value="{{this}}"></option>{{/envList}}
+          						</datalist>
+          		
+                        </div>
+                      </div>
+                 
+                 
+                 
+                      <div class="form-group">
+                        <label class="control-label col-md-2 col-sm-2 col-xs-12">Sub-Environment</label>
+                        <div class="col-md-3 col-sm-3 col-xs-12">
+                    
+                          <input list="subEnvList" type="text" class="form-control" id="subEnv" name="subEnv" placeholder="Select..." value="{{#subEnv}}{{this}}{{/subEnv}}" />
+        					<datalist id="subEnvList">
+        					    {{#subEnvList}}<option value="{{this}}"></option>{{/subEnvList}}
+          						</datalist>
+          
+                        </div>
+                      </div>
+                      
+                      
+                      
+                    
+                	  <div class="form-group">
+                        <label class="control-label col-md-2 col-sm-2 col-xs-12">Service Group</label>
+                        <div class="col-md-3 col-sm-3 col-xs-12">
+                    
+                          <input list="serviceGroupList" type="text" class="form-control" id="serviceGroup" name="serviceGroup" placeholder="Select..." value="{{#serviceGroup}}{{this}}{{/serviceGroup}}" />
+        					<datalist id="serviceGroupList">
+        					    {{#serviceGroupList}}<option value="{{this}}"></option>{{/serviceGroupList}}
+          						</datalist>
+          	
+                        </div>
+                      </div>
+                     
+                     
+                     
+                     
+                     <div class="form-group">
+                        <label class="control-label col-md-2 col-sm-2 col-xs-12">Region</label>
+                        <div class="col-md-3 col-sm-3 col-xs-12">
+                    
+                          <input list="regionList" type="text" class="form-control" id="region" name="region" placeholder="Select..." value="{{#region}}{{this}}{{/region}}" />
+        					<datalist id="regionList">
+        					    {{#regionList}}<option value="{{this}}"></option>{{/regionList}}
+          						</datalist>
+          			
+                        </div>
+                      </div>
+                      
+              
+                      <div class="form-group">
+                        <div class="col-md-1 col-sm-1 col-xs-12 col-md-offset-2">
+             
+                          <button type="submit" class="btn btn-primary">Submit</button>
+                        </div>
+                      </div>
+                    </form>
+                  </div>
+              
+              </div>
+          
+          
+          {{#results}}
+          <!-- begin results -->
+           <div class="row">
+              <div class="col-md-12 col-sm-12 col-xs-12">
+<div class="x_panel">
+                  <div class="x_title">
+                    <h2>Results<small></small></h2>
+              
+                    <div class="clearfix"></div>
+                  </div>
+                  <div class="x_content">
+                    <br />
+                     <table id="services_table" class="table table-bordered table-hover">
+                            <thead>
+                            <tr>
+                                <th>Swarm Name</th>
+                                <th>Service Name</th>
+                                <th>App Id</th>
+                                <th>Image</th>
+                                <th>Args</th>
+                                <th>Created</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {{#services}}
+                            <tr>
+                             <td><a href="/swarm-clusters/{{swarmName}}">{{swarmName}}</a></td>
+                             <td>{{#s}}<a href="/swarm-services/{{serviceId}}">{{name}}</a>{{/s}}</td>
+                             <td>{{#s}}{{label_tsdAppId}}{{/s}}</td>
+                             <td>{{#s}}{{taskImageName}}{{/s}}</td>
+                             <td>{{#s}}{{args}}{{/s}}</td>
+                             <td>{{#s}}{{createdAtPrettyTime}}{{/s}}</td>
+                            </tr>
+                            {{/services}}
+                            </tbody>
+                        </table>
+                  </div>
+              </div>
+           </div>
+           <!-- end results -->
+           {{/results}}
+                  
+           </div>
+          
+          
+          </div>
+          
+          
+
+          
+          
+        </div>
+        <!-- /page content -->
+
+{{>footer}}

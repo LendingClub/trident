@@ -9,7 +9,7 @@
 curl -s -f -k -X POST {{tridentBaseUrl}}/api/trident/provision/{{operation}} \
  -F ipAddr=${IP_ADDR} \
  -F id={{id}} \
- -F nodeType={{nodeType}} \
+ -F swarmNodeType={{swarmNodeType}} \
  -F awsInstanceId=${AWS_INSTANCE_ID} \
    >${NEXT_SCRIPT} || exit 99
  

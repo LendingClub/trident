@@ -1,0 +1,361 @@
+{{>header}}
+<head>
+</head>
+<!-- page content -->
+<div class="right_col" role="main">
+  <div class="">
+    <div class="page-title">
+      <div class="title_left">
+        <h3>Settings</h3>
+      </div>
+    </div>
+    <div class="clearfix"></div>
+    {{#message}}
+    <div class="alert alert-{{label}}" style="display:{{displayMessage}}">
+       <ul class="fa-ul">
+          <li> <i class="fa fa-info-circle fa-lg fa-li"></i>{{message}}</li>
+       </ul>
+    </div>
+    {{/message}}   
+    <div class="row"> <!-- Start of Row Content -->
+       <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+             <div class="x_content">
+                <!-- Notifications settings should go here -->
+                <div class role="tabpanel" data-exaple-id="togglable-tabs">
+                    <ul id="myTab" class="nav nav-tabs bar_tabs" role="tablist">
+                       <li role="presentation">
+                           <a href="#tab_config" id="home-tab" role="tab" data-toggle="tab" aria-expanded="true"> Configurations </a>
+                       </li>
+                       <li role="presentation">
+                           <a href="#tab_notifications" id="profile-tab" role="tab" data-toggle="tab" aria-expanded="true"> Notification Channels </a>
+                       </li>
+                    </ul>
+                    <div id="myTabContent" class="tab-content">
+                        <div role="tabpanel" class="tab-pane fade {{tab_config}}" id="tab_config" aria-labelledby="home-tab">
+                           <div id= "new_config_div" style="position:relative; display:none;">
+                               <div class="x_title">
+				                 <h2> Add New Config </h2>
+				                 <div class="clearfix"></div>
+				               </div>
+                               <div id="config-form-div" style="padding-top: 20px;">
+                                   <form id="config-form" method="post" class="form-horizontal" action="/settings/config/create">
+                                        <div class="item form-group">
+						                    <label class="control-label col-xs-1" for="Type">
+						                       Type <span class="required">*</span>
+						                    </label>
+						                    <div class="col-xs-8">
+						                       <select class="form-control col-md-7 col-xs-12" id="type" name="type" required="required">
+						                          <option value="">Select...</option>
+						                        {{#configTypes}}
+						                            <option value="{{.}}">{{.}}</option>
+						                        {{/configTypes}}
+						                       </select>
+						                    </div>
+						                </div>
+						                <div class="item form-group">
+						                    <label class="control-label col-xs-1" for="name">
+						                       Name <span class="required">*</span>
+						                    </label>
+						                    <div class="col-xs-8">
+						                       <input type="text" id="name" name="name" required="required" class="form-control col-md-7 col-xs-12" placeholder="default">						   
+						                    </div>
+						                </div>
+									    <div class="form-group" id="configFields">
+									        <label class="col-xs-1 control-label">Property</label>
+									        <div class="col-xs-4">
+									            <input type="text" class="form-control" name="key[0]" placeholder="key" required="required"/>
+									        </div>
+									        <div class="col-xs-4">
+									            <input type="text" class="form-control" name="value[0]" placeholder="value" required="required"/>
+									        </div>
+									         <div class="col-xs-1">
+									            <input type="checkbox" class="form-control" name="encrypt[0]" value = "true"/>
+									            <label class="col-xs-1 control-label">Encrypt</label>
+									        </div>
+									        
+									        <div class="col-xs-1">
+									            <button type="button" class="btn btn-default addButton"><i class="fa fa-plus"></i></button>
+									        </div>
+									    </div>									
+									    <!-- The template for adding new field -->
+									    <div class="form-group hide" id="configTemplate">
+									        <div class="col-xs-4 col-xs-offset-1">
+									            <input type="text" class="form-control" name="key" placeholder="key">
+									        </div>
+									        <div class="col-xs-4">
+									            <input type="text" class="form-control" name="value" placeholder="value">
+									        </div>
+									         <div class="col-xs-1">
+									            <input type="checkbox" class="form-control" name="encrypt">
+									            <label class="col-xs-1 control-label">Encrypt</label>
+									        </div>
+									        
+									        <div class="col-xs-1">
+									            <button type="button" class="btn btn-default removeButton"><i class="fa fa-minus"></i></button>
+									        </div>
+									    </div>
+									    <div class="ln_solid"></div>								
+									    <div class="form-group">
+									        <div class="col-md-6 col-md-offset-3">
+									            <button type="button" class="btn btn-primary removeProperties" id="cancel-config-form"> Cancel</button>
+									            <button type="submit" class="btn btn-success" id="submit-new-config">Add Config</button>
+									        </div>
+									    </div>
+									</form>
+                               </div>
+                           </div>
+
+                           <div id="config_display_div" style="padding-top: 20px">
+                              <div class="x_title">
+				                 <h2> Configurations </h2>
+				                 <button type="button" class="btn btn-primary navbar-right panel_toolbox" id="add-config-button">Add new config</button>
+				                 <div class="clearfix"></div>
+				              </div>
+				              <div id="configs_div">
+				                 <table id="datatable" class="table table-striped ">
+				                   <thead>
+				                    <th> Config Properties </th>
+				                   </thead>
+				                    {{#configs}}
+				                   <tr>
+				                     <td>                               
+	                                  <table  class="table table-striped table-bordered table-condensed">
+	                                   {{#keysList}}
+	                                    <tr>                                   
+	                                      <th style="width:50%; overflow:hidden; text-transform:uppercase;">{{key}}</th>
+	                                      <td style="width:50%; overflow:hidden;">{{value}}</td>
+	                                   </tr>
+	                                   {{/keysList}}
+	                                  </table>	                               
+	                                </td>
+	                               </tr>
+	                                {{/configs}}
+	                            </table>
+                              </div>
+                           </div>
+                        </div> <!-- // End of tab content 1 -->
+                        <div role="tabpanel" class="tab-pane fade {{tab_notifications}}" id="tab_notifications" aria-labelledby="profile-tab">
+	                          <div class="clearfix" style="padding-top: 20px"></div>
+	                          <div id= "new_channel_div" style="position: relative;">
+		                          <button data-toggle="dropdown" class="btn btn-primary btn-lg dropdown-toggle" type="button" aria-expanded="false">New notification channel 
+		                             <span class="caret"></span>
+				                  </button>
+				                  <ul role="menu" class="dropdown-menu" style="padding: 12px; font-size:15px">
+				                     {{#notificationChannels}}
+				                      <li><a href="/settings/channels/{{.}}" id="{{.}}" name="{{.}}"><span style="text-transform:capitalize">{{.}}</span></a></li>
+				                      {{/notificationChannels}}
+				                  </ul>
+			                   </div>
+	                          <div id="channels_creation_div" style="padding-top: 20px">                    
+		                        <div class="x_panel" id="hipchat-div-block" style="display:{{hipchat-div-block-dis}};">
+					             <div class="x_title">
+					               <h2> HipChat Channel</h2>
+					               <div class="clearfix"></div>
+					             </div>
+				                        <div class="hipchat-configure-form" id="hipchat-form-div">
+					                       <form class="form-horizontal form-label-left" name="create-hp-form" id="create-hp-form" action="{{hipchat-action}}" method="POST">
+					                              <div class="item form-group">
+								                    <label class="control-label col-md-3 col-sm-3 col-xs-12 for="roomName">
+								                       Room Name <span class="required">*</span>
+								                    </label>
+								                    <div class="col-md-6 col-sm-6 col-xs-12">
+								                       <input type="roomName" id="roomName" name="roomName" required="required" class="form-control col-md-7 col-xs-12">
+								                    </div>
+								                  </div>
+								                  <div class="item form-group">
+								                    <label class="control-label col-md-3 col-sm-3 col-xs-12 for="adminToken">
+								                       Admin Token <span class="required">*</span>
+								                    </label>
+								                    <div class="col-md-6 col-sm-6 col-xs-12">
+								                       <input type="adminToken" id="adminToken" name="adminToken" required="required" class="form-control col-md-7 col-xs-12">
+								                    </div>
+								                  </div>
+								                  <div class="ln_solid"></div>
+									              <div class="form-group">
+									                  <div class="col-md-6 col-md-offset-3">
+									                      <button type="button" class="btn btn-primary" id="cancel-create-hp-room"> Cancel</button>
+									                      <button type="submit" class="btn btn-success" id="submit-create-hp-room"> Create HipChat Channel</button>
+									                  </div>
+									              </div>				              
+					                       </form>
+					                    </div>
+					            </div>
+			                    <div class="x_panel" id="email-div-block" style="display:{{email-div-block-dis}};">
+						            <div class="x_title">
+						               <h2> Email Channel</h2>
+						               <div class="clearfix"></div>
+						            </div>
+				                    <div class="email-configure-form" id="email-form-div">
+				                       <form class="form-horizontal form-label-left" name="create-email-form" id="create-email-form" action="{{email-action}}" method="POST">
+				                              <div class="item form-group">
+							                    <label class="control-label col-md-3 col-sm-3 col-xs-12 for="email">
+							                       Email <span class="required">*</span>
+							                    </label>
+							                    <div class="col-md-6 col-sm-6 col-xs-12">
+							                       <input type="email" id="email" name="email" required="required" class="form-control col-md-7 col-xs-12">
+							                    </div>
+							                  </div>
+							                  <div class="item form-group">
+							                    <label class="control-label col-md-3 col-sm-3 col-xs-12 for="token">
+							                       Token <span class="required">*</span>
+							                    </label>
+							                    <div class="col-md-6 col-sm-6 col-xs-12">
+							                       <input type="token" id="token" name="token" required="required" class="form-control col-md-7 col-xs-12">
+							                    </div>
+							                  </div>
+							                  <div class="ln_solid"></div>
+								              <div class="form-group">
+								                  <div class="col-md-6 col-md-offset-3">
+								                      <button type="button" class="btn btn-primary" id="cancel-create-email"> Cancel</button>
+								                      <button type="submit" class="btn btn-success" id="submit-create-email"> Create Email Channel</button>
+								                  </div>
+								              </div>				              
+				                       </form>
+				                    </div>
+			                    </div>
+			                    <div class="x_panel" id="pagerduty-div-block" style="display:{{pagerduty-div-block-dis}};">
+					             <div class="x_title">
+					               <h2> PagerDuty Channel</h2>
+					               <div class="clearfix"></div>
+					             </div>
+				                    <div class="email-configure-form" id="pd-form-div">
+					                       <form class="form-horizontal form-label-left" name="create-pd-form" id="create-pd-form" action="{{pagerduty-action}}" method="POST">
+					                              <div class="item form-group">
+								                    <label class="control-label col-md-3 col-sm-3 col-xs-12 for="serviceName">
+								                       Service Name <span class="required">*</span>
+								                    </label>
+								                    <div class="col-md-6 col-sm-6 col-xs-12">
+								                       <input type="serviceName" id="serviceName" name="serviceName" required="required" class="form-control col-md-7 col-xs-12">
+								                    </div>
+								                  </div>
+								                  <div class="item form-group">
+								                    <label class="control-label col-md-3 col-sm-3 col-xs-12 for="apiKey">
+								                       Api Key <span class="required">*</span>
+								                    </label>
+								                    <div class="col-md-6 col-sm-6 col-xs-12">
+								                       <input type="apiKey" id="apiKey" name="apiKey" required="required" class="form-control col-md-7 col-xs-12">
+								                    </div>
+								                  </div>
+								                  <div class="ln_solid"></div>
+									              <div class="form-group">
+									                  <div class="col-md-6 col-md-offset-3">
+									                      <button type="button" class="btn btn-primary" id="cancel-create-pd"> Cancel</button>
+									                      <button type="submit" class="btn btn-success" id="submit-create-pd"> Create PagerDuty Channel</button>
+									                  </div>
+									              </div>				              
+					                       </form>
+					                </div>
+					             </div>
+					            <div id="channels_display_div" style="padding-top: 20px"> 
+	                         <table id="datatable" class="table table-striped table-bordered">
+					            <thead>
+					              <tr>
+					                <th>Name</th>
+					                <th>Type</th>
+					                <th>Updated TimeStamp</th>
+					                <th>Action</th>             
+					              </tr>
+					            </thead>
+					            <tbody>
+					               {{#notificationChannelsData}}
+					                 <td> {{name}} </td>
+					                 <td> {{type}} </td>
+					                 <td> {{date}} </td>
+					                 <td> 
+					                    <div class="icheckbox_flat_green" style="position:relative">
+					                       <a href="/settings/channel/delete?_type={{type}}&_name={{name}}" >
+					                         <i class="fa fa-trash" style="font-size:1.5em;"></i>
+					                       </a>
+					                    </div>
+					                 </td>
+					               {{/notificationChannelsData}}
+					            </tbody>
+					         </table> 
+					        </div>    
+	                       </div>
+                      </div> <!-- End of tab_notifications -->  
+                    </div> <!-- End of tabcontent -->
+                </div> <!--// End of tabPanel -->
+             </div> <!-- //End of x_content -->
+          </div> <!-- // End of x_panel -->     
+        </div>
+    </div> <!-- End of Row Content -->
+  </div>
+</div> <!-- // End of righ_col -->
+<!-- /page content -->
+
+{{>footer}}
+
+<script>
+    $(document).ready(function () {
+      $('.dropdown-toggle').dropdown();
+      
+      propertiesCount = 0;
+      // Add button click handler
+      $('#config-form').on('click', '.addButton', function() {
+    	    propertiesCount++;
+            var $template = $('#configTemplate'),
+                $clone    = $template
+                                .clone()
+                                .removeClass('hide')
+                                .removeAttr('id')
+                                .attr('propertyIndex', propertiesCount)
+                                .insertBefore($template),
+                $email    = $clone
+                                .find('[name="key"]').attr('name', 'key[' + propertiesCount + ']').attr('required', 'required').end()
+                                .find('[name="encrypt"]').attr('name', 'encrypt[' + propertiesCount + ']').end()
+                                .find('[name="value"]').attr('name', 'value[' + propertiesCount + ']').attr('required', 'required').end();
+      });
+
+        // Remove button click handler
+      $('#config-form').on('click', '.removeButton', function() {
+            var $row   = $(this).closest('.form-group'),
+                index  = $row.attr('propertyIndex')
+                $email = $row.find('[name="key[' + index +']"]');
+            propertiesCount = --index;
+            // Remove element containing the email
+            $row.remove();
+      });
+      
+  	  // show cluster form on click add config button
+  	  $("#add-config-button").click(function() {
+  		  $("#new_config_div").show();
+  		  $("#add-config-button").hide();
+  		  $("#config_display_div").hide();
+  	  });
+  	  
+  	  // hide config-creation-form on cancel
+  	  $("#config-form").on ('click', '.removeProperties', function() {
+  		  document.getElementById("config-form").reset();
+  		  $("#new_config_div").hide();
+  		  $("#add-config-button").show();
+  		  $("#config_display_div").show();
+  		  
+  		  // remove unnecessary config fields
+  		  while(propertiesCount !=0 ) {
+  			  var $row =  $("div[propertyIndex='"+ propertiesCount +"']");
+  			  $row.remove();
+  			  propertiesCount--;
+  		  }		 
+  	  });
+        
+     // hide create-pd-form on cancel
+  	  $("#cancel-create-pd").click(function() {
+  		  document.getElementById("create-pd-form").reset();
+  		  $("#pagerduty-div-block").hide();
+  	  });
+     
+      // hide create-email-form on cancel
+  	  $("#cancel-create-email").click(function() {
+  		  document.getElementById("create-email-form").reset();
+  		  $("#email-div-block").hide();
+  	  });
+      
+  	 // hide create-email-form on cancel
+  	  $("#cancel-create-hp-room").click(function() {
+  		  document.getElementById("create-hp-form").reset();
+  		  $("#hipchat-div-block").hide();
+  	  }); 
+    });
+</script>

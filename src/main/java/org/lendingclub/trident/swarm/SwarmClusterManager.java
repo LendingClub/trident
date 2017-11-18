@@ -11,16 +11,22 @@ import java.util.concurrent.TimeUnit;
 
 import javax.annotation.PostConstruct;
 import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.MediaType;
 
 import org.lendingclub.mercator.core.Projector;
 import org.lendingclub.mercator.docker.DockerScanner;
 import org.lendingclub.mercator.docker.DockerScannerBuilder;
 import org.lendingclub.mercator.docker.SwarmScanner;
 import org.lendingclub.neorx.NeoRxClient;
+import org.lendingclub.trident.NotFoundException;
 import org.lendingclub.trident.TridentException;
 import org.lendingclub.trident.crypto.CertificateAuthority;
 import org.lendingclub.trident.crypto.CertificateAuthority.CertDetail;
 import org.lendingclub.trident.crypto.CertificateAuthorityManager;
+import org.lendingclub.trident.crypto.CryptoService;
+import org.lendingclub.trident.provision.SwarmTemplateManager;
+import org.lendingclub.trident.swarm.aws.AWSController;
+import org.lendingclub.trident.swarm.baremetal.BareMetalController;
 import org.lendingclub.trident.util.TridentStartupListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +48,7 @@ import com.google.common.base.Stopwatch;
 import com.google.common.base.Strings;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.io.Files;
 
@@ -60,9 +67,21 @@ public class SwarmClusterManager implements TridentStartupListener {
 	@Autowired
 	CertificateAuthorityManager certificateAuthorityManager;
 
+	@Autowired
+	CryptoService cryptoService;
+
 	Logger logger = LoggerFactory.getLogger(SwarmClusterManager.class);
 
 	File transientCertStoreDir;
+
+	@Autowired
+	SwarmTemplateManager swarmTemplateManager;
+
+	@Autowired
+	AWSController awsController;
+
+	@Autowired
+	BareMetalController bareMetalController;
 
 	long certValidityMinutes = TimeUnit.HOURS.toMinutes(4);
 	Cache<String, CertDetail> certCache = CacheBuilder.newBuilder()
@@ -72,6 +91,7 @@ public class SwarmClusterManager implements TridentStartupListener {
 			.build();
 
 	ScheduledExecutorService watchdog;
+
 
 	public static class Address {
 		String url;
@@ -182,7 +202,7 @@ public class SwarmClusterManager implements TridentStartupListener {
 		throw new UnsupportedOperationException();
 	}
 
-	public DockerClient getSwarmManagerClient(String name) {
+	protected DockerClient getSwarmManagerClient(String name) {
 
 		DockerClient client = null;
 		// We are really doing some client-side load balancing here and need a
@@ -192,7 +212,7 @@ public class SwarmClusterManager implements TridentStartupListener {
 
 		List<Address> managerAddressList = getManagerAddressList(name);
 
-		logger.info("maanger addresses: {}", managerAddressList);
+		logger.info("manager addresses: {}", managerAddressList);
 
 		if (managerAddressList.isEmpty()) {
 			throw new TridentException("could not find manager address for swarm: " + name);
@@ -272,17 +292,17 @@ public class SwarmClusterManager implements TridentStartupListener {
 		}
 	}
 
-	public WebTarget getSwarmManagerWebTarget(String name) {
+	protected WebTarget getSwarmManagerWebTarget(String name) {
 		return SwarmScanner.extractWebTarget(getSwarmManagerClient(name));
 	}
 
-	public DockerScanner getSwarmScanner(String name) {
+	protected DockerScanner getSwarmScanner(String name) {
 		return projector.createBuilder(DockerScannerBuilder.class).withDockerClient(getSwarmManagerClient(name))
 				.build();
 
 	}
 
-	public void scanSwarm(String name) {
+	protected void scanSwarm(String name) {
 		DockerScanner scanner = getSwarmScanner(name);
 
 		// First, scan the swarm
@@ -309,7 +329,9 @@ public class SwarmClusterManager implements TridentStartupListener {
 	}
 
 	void markSuccessfulConnection(String id) {
-		neo4j.execCypher("match (s:DockerSwarm {tridentClusterId:{id}}) set s.lastContactTs=timestamp(), s.updateTs=timestamp()", "id", id);
+		neo4j.execCypher(
+				"match (s:DockerSwarm {tridentClusterId:{id}}) set s.lastContactTs=timestamp(), s.updateTs=timestamp()",
+				"id", id);
 	}
 
 	private void markSuccessfulConnection(Address address) {
@@ -335,8 +357,9 @@ public class SwarmClusterManager implements TridentStartupListener {
 
 	public List<String> getSwarmNames() {
 		return neo4j.execCypher("match (d:DockerSwarm) where exists(d.tridentClusterId) and exists(d.name) return d")
-		.map(it->it.path("name").asText()).toList().blockingGet();
+				.map(it -> it.path("name").asText()).toList().blockingGet();
 	}
+
 	public void scanAllSwarms() {
 
 		assignTridentClusterToLocalClusters();
@@ -359,6 +382,9 @@ public class SwarmClusterManager implements TridentStartupListener {
 							logger.info("Scanning swarm: {}", id);
 							scanSwarm(id);
 							markSuccessfulConnection(id);
+							
+							// with positive contact, we don't need the join tokens any longer
+							removeJoinTokens(id);
 						}
 					} catch (RuntimeException e) {
 						if (e.getMessage() != null && e.getMessage().contains("could not find manager address")) {
@@ -368,6 +394,33 @@ public class SwarmClusterManager implements TridentStartupListener {
 						}
 					}
 				});
+	}
+
+	boolean isAwsTemplate(JsonNode n) {
+		return n.has("awsManagerSubnets") || n.has("awsManagerSecurityGroups");
+	}
+
+	private void removeJoinTokens(String id) {
+		neo4j.execCypher("match (s:DockerSwarm) where s.tridentClusterId={id} or s.swarmClusterId={id} or s.name={id} remove s.managerJoinToken, s.workerJoinToken","id",id);
+	}
+	public JsonNode createSwarm(JsonNode n) {
+		String name = n.path("name").asText();
+		String templateName = n.path("template").asText();
+
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(name), "swarm name cannot be null");
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(templateName), "swarm template must be set");
+
+		Optional<JsonNode> template = swarmTemplateManager.getTemplate(templateName);
+		if (template.isPresent()) {
+			if (isAwsTemplate(template.get())) {
+				return awsController.createSwarm(n);
+			} else {
+				return bareMetalController.createSwarm(n);
+			}
+		} else {
+			throw new IllegalArgumentException("invalid template: " + templateName);
+		}
+
 	}
 
 	private String removePort(String addr) {
@@ -395,7 +448,28 @@ public class SwarmClusterManager implements TridentStartupListener {
 
 	}
 
-	public DockerClient getSwarmNodeClient(String n) {
+	public Swarm getSwarm(String id) {
+		List<JsonNode> nl = neo4j.execCypher(
+				"match (s:DockerSwarm) where s.name={id} or s.swarmClusterId={id} or s.tridentClusterId={id} return s",
+				"id", id).toList().blockingGet();
+		if (nl.isEmpty()) {
+			throw new NotFoundException("swarm", id);
+		}
+		if (nl.size() > 1) {
+			throw new TridentException("more than one swarm found: " + id);
+		}
+
+		SwarmImpl si = new SwarmImpl();
+		si.tridentId = nl.get(0).path("tridentClusterId").asText(null);
+		si.swarmId = nl.get(0).path("swarmClusterId").asText(null);
+		si.swarmName = nl.get(0).path("name").asText(null);
+		si.swarmClusterManager = this;
+		Preconditions.checkState(!Strings.isNullOrEmpty(si.tridentId));
+		Preconditions.checkState(!Strings.isNullOrEmpty(si.swarmName));
+		return si;
+	}
+
+	protected DockerClient getSwarmNodeClient(String n) {
 
 		DockerClient c = null;
 		JsonNode node = neo4j.execCypher(
@@ -418,7 +492,7 @@ public class SwarmClusterManager implements TridentStartupListener {
 		return c;
 	}
 
-	public WebTarget getSwarmNodeWebTarget(String n) {
+	protected WebTarget getSwarmNodeWebTarget(String n) {
 		return SwarmScanner.extractWebTarget(getSwarmNodeClient(n));
 	}
 
@@ -445,16 +519,16 @@ public class SwarmClusterManager implements TridentStartupListener {
 
 	void checkCachedConnections() {
 		Stopwatch sw = Stopwatch.createStarted();
-		logger.info("checking cached connections...");
+		logger.debug("checking cached connections...");
 		List<Address> clients = Lists.newArrayList(clientCache.asMap().keySet());
 		clients.forEach(it -> {
 			try {
-				logger.info("checking connection: {}", it);
+				logger.debug("checking connection: {}", it);
 				DockerClient client = clientCache.getIfPresent(it);
 				if (client != null) {
 					try {
 						client.pingCmd().exec();
-						logger.info("client is alive: {}", it);
+						logger.debug("client is alive: {}", it);
 						markSuccessfulConnection(it);
 					} catch (Exception e) {
 						logger.info("client to {} failed ping check - {}", it, e.toString());
@@ -496,8 +570,8 @@ public class SwarmClusterManager implements TridentStartupListener {
 	}
 
 	/**
-	 * Obtain a manager endpoint <ip>:2377. We use this to keep the
-	 * managerAddress field up-to-date. This is used as nodes join the swarm.
+	 * Obtain a manager endpoint <ip>:2377. We use this to keep the managerAddress
+	 * field up-to-date. This is used as nodes join the swarm.
 	 * 
 	 * @param id
 	 * @return
@@ -564,22 +638,22 @@ public class SwarmClusterManager implements TridentStartupListener {
 	}
 
 	/**
-	 * Updates the DockerSwarm.managerApiUrl attribute to a legitimate value. It
-	 * is going to try using managerDnsName first. If we can connect
-	 * successfully, then we use that value. If we can't connect, we'll fall
-	 * back to using the existing connection, which we confirm is correct.
+	 * Updates the DockerSwarm.managerApiUrl attribute to a legitimate value. It is
+	 * going to try using managerDnsName first. If we can connect successfully, then
+	 * we use that value. If we can't connect, we'll fall back to using the existing
+	 * connection, which we confirm is correct.
 	 * 
 	 * Note that managerApiUrl and maangerAddress are different. managerApiUrl
 	 * contains the url that clients will use to communicate with manager, which
 	 * could be a CNAME to a load balancer.
 	 * 
-	 * On the other hand, managerAddress contains the swarm-internal
-	 * communication ip:2377 pair.
+	 * On the other hand, managerAddress contains the swarm-internal communication
+	 * ip:2377 pair.
 	 * 
-	 * This is all kind of hairy and difficult to test. Hopefully all works and
-	 * we never touch it again. If it does have issues, we'll need to decompose
-	 * this into a separate class that makes it easy to override specific
-	 * operations with mock calls.
+	 * This is all kind of hairy and difficult to test. Hopefully all works and we
+	 * never touch it again. If it does have issues, we'll need to decompose this
+	 * into a separate class that makes it easy to override specific operations with
+	 * mock calls.
 	 * 
 	 * @param id
 	 */
@@ -625,11 +699,16 @@ public class SwarmClusterManager implements TridentStartupListener {
 				if (!managerApiUrl.equals(url)) {
 
 					Address address = new Address(url, tridentClusterId);
-					if (ping(address)) {
-						logger.info("connectivity confirmed to {}", address);
-						newUrl = url;
-					} else {
-						logger.info("could not establish connection to: " + address);
+					try {
+						if (ping(address)) {
+							logger.info("connectivity confirmed to {}", address);
+							newUrl = url;
+						} else {
+							logger.info("could not establish connection to: " + address);
+						}
+					} catch (Exception e) {
+						// stack trace is too noisy here
+						logger.info("could not establish connection to: " + address + " (" + e.toString() + ")");
 					}
 
 				}
@@ -687,11 +766,69 @@ public class SwarmClusterManager implements TridentStartupListener {
 		}
 
 	}
-	
+
 	public SwarmDiscoverySearch newServiceDiscoverySearch() {
-		SwarmDiscoverySearch s =  new SwarmDiscoverySearch(neo4j);
-	
+		SwarmDiscoverySearch s = new SwarmDiscoverySearch(neo4j);
+
 		return s;
+
+	}
+
+	private SwarmToken getJoinTokensFromNeo4j(String name, SwarmNodeType type) {
+		JsonNode n = neo4j.execCypher(
+				"match (a:DockerSwarm) where a.name={id} or a.tridentClusterId={id} or a.swarmClusterId={id} return a",
+				"id", name).blockingFirst(null);
+		if (n == null) {
+			throw new NotFoundException("DockerSwarm", name);
+		}
+		String managerAddress = n.path("managerAddress").asText();
+		String managerJoinToken = n.path("managerJoinToken").asText();
+		String workerJoinToken = n.path("workerJoinToken").asText();
+
+		
+		if (Strings.isNullOrEmpty(managerAddress) || Strings.isNullOrEmpty(managerJoinToken) || Strings.isNullOrEmpty(workerJoinToken)) {
+			throw new TridentException("Could not obtain join tokens for: " + name);
+		}
+		managerJoinToken = cryptoService.decryptString(managerJoinToken);
+		workerJoinToken = cryptoService.decryptString(workerJoinToken);
+
+		if (!managerAddress.contains(":")) {
+			managerAddress=managerAddress+":2377";
+		}
+		final String wjt = workerJoinToken;
+		final String mjt = managerJoinToken;
+		final String ma = managerAddress;
+		
+		return new SwarmToken(type, type==SwarmNodeType.MANAGER ? managerJoinToken : workerJoinToken, managerAddress);
 		
 	}
+
+	public SwarmToken getJoinToken(String name, SwarmNodeType type) {
+
+		Swarm swarm = null;
+		JsonNode r = null;
+		JsonNode info = null;
+		try {
+			swarm = getSwarm(name);
+			r = swarm.getManagerWebTarget().path("/swarm").request(MediaType.APPLICATION_JSON).get(JsonNode.class);
+			info = swarm.getInfo();
+		} catch (RuntimeException e) {
+			return getJoinTokensFromNeo4j(name,type);
+		}
+
+		swarm = getSwarm(name);
+
+		String workerJoinToken = r.path("JoinTokens").path("Worker").asText();
+		String managerJoinToken = r.path("JoinTokens").path("Manager").asText();
+
+		List<String> addressList = Lists.newArrayList();
+		info.path("Swarm").path("RemoteManagers").forEach(it -> {
+			addressList.add(it.path("Addr").asText());
+		});
+		SwarmToken st = new SwarmToken(type, type==SwarmNodeType.MANAGER ? managerJoinToken : workerJoinToken, addressList.get(0));
+		
+		return st;
+
+	}
+
 }

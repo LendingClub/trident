@@ -1,6 +1,7 @@
 package org.lendingclub.trident;
 
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.After;
@@ -16,21 +17,21 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.test.context.junit4.SpringJUnit4ClassRunner;
-import org.springframework.test.context.web.WebAppConfiguration;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientBuilder;
 import com.github.dockerjava.core.DockerClientConfig;
 import com.google.common.base.Stopwatch;
+import com.google.common.base.Strings;
 
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 @RunWith(SpringJUnit4ClassRunner.class)
-@ComponentScan(basePackageClasses = TridentConfig.class)
-
+@ComponentScan(basePackageClasses = { TridentConfig.class, TridentTestConfig.class })
 public abstract class TridentIntegrationTest {
 
-	private  Logger logger = LoggerFactory.getLogger(getClass());
+	private Logger logger = LoggerFactory.getLogger(getClass());
 	@Autowired
 	NeoRxClient neo4j;
 
@@ -57,16 +58,37 @@ public abstract class TridentIntegrationTest {
 		return integrationTestEnabled != null && integrationTestEnabled;
 	}
 
+	public JsonNode createDummySwarm() {
+		String name = "junit-" + System.currentTimeMillis();
+		String tridentClusterId = name;
+		String swarmClusterId = "junit-" + UUID.randomUUID().toString();
+		return neo4j.execCypher(
+				"merge (s:DockerSwarm {name:{name}}) set s.swarmClusterId={swarmClusterId}, s.tridentClusterId={tridentClusterId} return s",
+				"swarmClusterId", swarmClusterId, "name", name, "tridentClusterId", tridentClusterId).blockingFirst();
+
+	}
+
+	boolean isTestDataCleanupEnabled() {
+		String val = Strings.nullToEmpty(System.getProperty("testDataCleanup",System.getenv("testDataCleanup")));
+		if (val.toLowerCase().equals("false")) {
+			return false;
+		}
+		return true;
+	}
 	@After
 	public void cleanupUnitTestData() {
-		if (isIntegrationTestEnabled()) {
-			Stopwatch sw = Stopwatch.createStarted();
-			neo4j.execCypher("match (d:DockerSwarm)--(x) where d.name=~'junit.*' detach delete x");
-			neo4j.execCypher("match (d:DockerSwarm) where d.name=~'junit.*' detach delete d");
-			neo4j.execCypher("match (d:DockerSwarm) where d.tridentClusterId=~'junit.*' detach delete d");
-			neo4j.execCypher("match (d:DockerHost) where d.name=~'junit.*' detach delete d");
-			neo4j.execCypher("match (d) where exists(d.junitData) detach delete d");
-			logger.info("test data cleanup took {}ms",sw.elapsed(TimeUnit.MILLISECONDS));
+		if (!isTestDataCleanupEnabled()) {
+			if (isIntegrationTestEnabled()) {
+				Stopwatch sw = Stopwatch.createStarted();
+				neo4j.execCypher("match (d:DockerSwarm)--(x) where d.name=~'junit.*' detach delete x");
+				neo4j.execCypher("match (d:DockerSwarm) where d.name=~'junit.*' detach delete d");
+				neo4j.execCypher("match (d:DockerSwarm) where d.tridentClusterId=~'junit.*' detach delete d");
+				neo4j.execCypher("match (d:DockerHost) where d.name=~'junit.*' detach delete d");
+				neo4j.execCypher("match (d) where exists(d.junitData) detach delete d");
+				if (sw.elapsed(TimeUnit.MILLISECONDS) > 500) {
+					logger.info("test data cleanup took {}ms", sw.elapsed(TimeUnit.MILLISECONDS));
+				}
+			}
 		}
 	}
 
@@ -76,6 +98,7 @@ public abstract class TridentIntegrationTest {
 		}
 		return Optional.empty();
 	}
+
 	public synchronized boolean isLocalDockerDaemonAvailable() {
 		if (localDockerClient == null) {
 			DockerClientConfig config = DefaultDockerClientConfig.createDefaultConfigBuilder()
@@ -87,8 +110,7 @@ public abstract class TridentIntegrationTest {
 		try {
 			localDockerClient.pingCmd().exec();
 			return true;
-		}
-		catch (Exception e) {
+		} catch (Exception e) {
 			return false;
 		}
 

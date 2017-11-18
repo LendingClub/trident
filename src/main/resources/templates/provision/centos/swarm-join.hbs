@@ -13,12 +13,6 @@ set -x
 
 SWARM_NODE_ID=$(docker info | grep NodeID | awk  '{print $2 }')
 
-# If we are a manager, put ourselves in draining state.
-if [ "{{nodeType}}" = "MANAGER" ]; then
-	echo "placing manager node in draining state"
-	docker node update --availability drain $(docker node ls | grep '*' | awk '{ print $1 }')
-fi
-
 
 # tracing off
 set +x
@@ -26,7 +20,7 @@ set +x
 curl -s -f -k -X POST {{tridentBaseUrl}}/api/trident/provision/ready \
  -F ipAddr=${IP_ADDR} \
  -F id={{id}} \
- -F nodeType={{nodeType}} \
+ -F swarmNodeType={{swarmNodeType}} \
  -F awsInstanceId=${AWS_INSTANCE_ID} \
  -F swarmNodeId=${SWARM_NODE_ID} \
    >${NEXT_SCRIPT} || exit 99

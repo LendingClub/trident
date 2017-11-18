@@ -7,7 +7,7 @@ curl -s -f -k -X POST \
   -F ipAddr=${IP_ADDR} \
   -F id={{id}} \
   -F awsInstanceId=${AWS_INSTANCE_ID} \
-  -F nodeType={{nodeType}} \
+  -F swarmNodeType={{swarmNodeType}} \
   >${NEXT_SCRIPT} || exit 99
   
  exec /bin/bash -x ${NEXT_SCRIPT}

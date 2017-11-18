@@ -1,0 +1,51 @@
+
+buildscript {
+
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        jcenter()
+    }
+     dependencies {
+        classpath 'com.github.jengelman.gradle.plugins:shadow:2.0.1'
+    }
+
+}
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'idea'
+apply plugin: 'application'
+apply plugin: 'com.github.johnrengelman.shadow'
+
+group 'org.lendingclub.trident'
+mainClassName = 'org.lendingclub.trident.plugin.authz.Main'
+// In this section you declare where to find the dependencies of your project
+repositories {
+    mavenLocal()
+    mavenCentral()
+    jcenter()
+}
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '4.1'
+}
+    task dockerBuild(type: Exec) {
+        workingDir "src/main/docker"
+        commandLine "/bin/bash", "build-plugin.sh"
+    }
+    assemble.doLast() {
+        tasks.dockerBuild.execute()
+    }
+// In this section you declare the dependencies for your production and test code
+dependencies {
+    // The production code uses the SLF4J logging API at compile time
+    compile 'org.slf4j:slf4j-api:1.7.22'
+    compile 'ch.qos.logback:logback-classic:1.2.3'
+    compile 'com.sparkjava:spark-core:2.6.0'
+    compile 'com.fasterxml.jackson.core:jackson-databind:2.9.0'
+    compile "io.macgyver.okrest3:okrest:${OKREST_VERSION}"
+    testCompile "com.squareup.okhttp3:mockwebserver:${OKHTTP_VERSION}"
+    testCompile 'junit:junit:4.12'
+    testCompile 'org.assertj:assertj-core:3.6.2'
+}
+

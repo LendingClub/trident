@@ -6,19 +6,26 @@ import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.lendingclub.mercator.docker.DockerRestClient;
+import org.lendingclub.neorx.NeoRxClient;
 import org.lendingclub.trident.cluster.TridentClusterManager;
+import org.lendingclub.trident.config.ConfigManager;
 import org.lendingclub.trident.event.EventSystem;
 import org.lendingclub.trident.util.JsonUtil;
 import org.lendingclub.trident.util.TridentStartupListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.data.neo4j.Neo4jDataAutoConfiguration;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.MissingNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.github.dockerjava.api.DockerClient;
 import com.google.common.base.Preconditions;
@@ -45,32 +52,72 @@ public class SwarmEventManager implements TridentStartupListener {
 	TridentClusterManager tridentClusterManager;
 
 	@Autowired
+	ConfigManager configManager;
+
+	@Autowired
 	IncrementalScannerEventConsumer incrementalScannerEventConsumer;
+
+	@Autowired
+	NeoRxClient neo4j;
+
+	public static final String SWARM_EVENT_STREAM_ENABLED = "swarmEventStreamEnabled";
+	private AtomicBoolean swarmEventsDisabledWarningIssued = new AtomicBoolean(false);
+
+	public boolean isEnabled() {
+
+		boolean b = configManager.getConfig("trident", "default").orElse(MissingNode.getInstance())
+				.path(SWARM_EVENT_STREAM_ENABLED).asBoolean(true);
+
+		// Issue a warning, but only once
+		if (b == false && swarmEventsDisabledWarningIssued.getAndSet(true) == false) {
+			logger.warn("Config type=trident name=default {}=false", SWARM_EVENT_STREAM_ENABLED);
+		}
+		if (b) {
+			swarmEventsDisabledWarningIssued.set(false);
+		}
+		return b;
+	}
 
 	class EventContext implements Runnable {
 		String name;
-		DockerClient client;
+		AtomicReference<DockerClient> clientRef = new AtomicReference<DockerClient>(null);
 		AtomicLong lastEventNano = new AtomicLong(TimeUnit.MILLISECONDS.toNanos(System.currentTimeMillis()));
 
-		public DockerClient getClient() {
-			return client;
+		public synchronized DockerClient getClient() {
+			// This local caching of client may not even be required, provided
+			// that the upstream
+			// clusterManager now caches.
+			DockerClient c = clientRef.get();
+			if (c != null) {
+				return c;
+			}
+			c = clusterManager.getSwarmManagerClient(name);
+			clientRef.set(c);
+			return c;
 		}
 
 		public DockerRestClient getRestClient() {
 			return DockerRestClient.forDockerClient(getClient());
 		}
 
+		protected void forceReconnect() {
+			clientRef.set(null);
+		}
+
 		@Override
 		public void run() {
-			
-			
-			
+
 			Closer closer = Closer.create();
 			try {
+				if (!isEnabled()) {
+					return;
+				}
+
 				DockerRestClient restClient = getRestClient();
-				logger.info("polling for events from swarm={} url={}", name, restClient.getWebTarget().getUri().toString());
+	
 				long since = lastEventNano.get() + 1;
-				long until = System.currentTimeMillis() * 1000000;
+				long until = System.currentTimeMillis() * 1000000; // need this
+																	// in nanos
 				until = Math.max(since, until);
 				since = Math.min(since, until);
 				Preconditions.checkArgument(since <= until);
@@ -91,7 +138,8 @@ public class SwarmEventManager implements TridentStartupListener {
 					}
 				});
 			} catch (Exception e) {
-				logger.warn("problem fetching events", e);
+				logger.warn("problem fetching events from swarm '" + name + "' - " + e.toString());
+				forceReconnect();
 			} finally {
 				try {
 					closer.close();
@@ -119,7 +167,8 @@ public class SwarmEventManager implements TridentStartupListener {
 					publish = true;
 				}
 				if (!publish && Strings.nullToEmpty(System.getProperty("os.name")).toLowerCase().contains("os x")) {
-					// in local dev, it is annoying to have to wait for leader election for events to flow, so we 
+					// in local dev, it is annoying to have to wait for leader
+					// election for events to flow, so we
 					// just turn it on
 					publish = true;
 				}
@@ -129,8 +178,7 @@ public class SwarmEventManager implements TridentStartupListener {
 					// with the event.
 					String swarmClusterId = getRestClient().getSwarmClusterId().get();
 					eventSystem.post(
-							new DockerEvent().withPayload(n).withEnvelopeAttribute("swarmClusterId", swarmClusterId)
-								);
+							new DockerEvent().withPayload(n).withEnvelopeAttribute("swarmClusterId", swarmClusterId));
 				}
 
 			}
@@ -146,16 +194,26 @@ public class SwarmEventManager implements TridentStartupListener {
 
 	public void subscribeSwarmEvents(String swarmName) {
 
+		JsonNode n = neo4j.execCypher("match (s:DockerSwarm {name:{name}}) return s", "name", swarmName)
+				.blockingFirst(MissingNode.getInstance());
+
 		EventContext c = callbackMap.get(swarmName);
 		if (c == null) {
+
+			if (!n.has("swarmClusterId")) {
+
+				return;
+			}
+
 			logger.info("no event callback found...subscribing to events");
 			EventContext ctx = new EventContext();
-			ctx.client = clusterManager.getSwarmManagerClient(swarmName);
+
 			ctx.name = swarmName;
 			watchdogExecutor.scheduleWithFixedDelay(ctx, 0, 5, TimeUnit.SECONDS);
 			callbackMap.put(swarmName, ctx);
 		} else {
-			logger.info("akready subscribed to events from {}", swarmName);
+			
+			logger.debug("already subscribed to events from {}", swarmName);
 		}
 
 	}

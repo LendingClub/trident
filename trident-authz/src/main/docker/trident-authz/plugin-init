@@ -1,0 +1,6 @@
+#!/bin/bash
+
+
+socat UNIX-LISTEN:/run/docker/plugins/trident-authz.sock,reuseaddr,fork TCP:127.0.0.1:4567 &
+
+exec java -jar /trident-authz/trident-authz-all.jar
