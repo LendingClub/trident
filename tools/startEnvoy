@@ -1,0 +1,18 @@
+#!/bin/bash
+
+if [ "$1" = "local" ]; then
+    LOCAL_IP=$(ifconfig en0 | grep inet | grep -v inet6 | awk '{ print $2 }')
+    TSD_URL="http://${LOCAL_IP}:8080"
+fi
+
+docker run -it \
+    -e TSD_URL=${TSD_URL} \
+    -p 9000:9000 \
+    -p 5080:5080 \
+    -p 5443:5443 \
+    -p 9901:9901 \
+    -e TSD_GROUP=${TSD_GROUP-"services"} \
+    -e TSD_ZONE=${TSD_ZONE-"local"} \
+    -e TSD_ENV=${TSD_ENV-"demo"} \
+    -e TSD_SUB_ENV=${TSD_SUB_ENV-"default"} \
+    ${TRIDENT_ENVOY_IMAGE-"lendingclub/trident-envoy"}

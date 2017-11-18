@@ -1,0 +1,164 @@
+{{>header}}
+<!-- page content -->
+<div class="right_col" role="main">
+  <div class="">
+    <div class="page-title">
+      <div class="title_left">
+        <h3 style="text-transform:uppercase;">{{#cluster}}{{appId}}{{/cluster}}</h3>
+      </div>
+    </div>
+    <div class="clearfix"></div>
+    {{#message}}
+    <div class="alert alert-{{label}}" style="display:{{displayMessage}}">
+       <ul class="fa-ul">
+          <li> <i class="fa fa-info-circle fa-lg fa-li"></i>{{message}}</li>
+       </ul>
+    </div>
+    {{/message}}
+    <div class="row">
+       <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+             <div class="x_title">
+               <h2> Cluster Information </h2>
+               <div class="clearfix"></div>
+             </div>
+             <div class="x_content">
+                <table class="table table-striped table-bordered">
+                  {{#cluster}}
+                   <tr>
+                      <th>AppCluster ID</th><td>{{appClusterId}}</td>
+                   </tr>
+                   <tr>
+                      <th>Application Name</th><td>{{appId}}</td>
+                   </tr>
+                   <tr>
+                      <th>Environment</th><td>{{environment}}</td>
+                   </tr>
+                   <tr>
+                      <th>Sub Environment</th><td>{{subEnvironment}}</td>
+                   </tr>
+                   <tr>
+                      <th>Region</th><td>{{region}}</td>
+                   </tr>
+                   <tr>
+                      <th>Swarm</th><td>{{swarm}}</td>
+                   </tr>
+                   {{#serviceGroup}}
+                    <tr>
+                      <th>ServiceGroup</th><td>{{serviceGroup}}</td>
+                    </tr>
+                   {{/serviceGroup}}
+                  {{/cluster}}
+               </table>
+               <div class ="form-group">
+                   <a class="btn btn-primary" href="/app-clusters/{{#cluster}}{{appClusterId}}{{/cluster}}/createnewrelease">Create New Release</a>
+               </div>          
+             </div>
+          </div>
+       </div>
+       {{#dockerServices}}
+       <div class="col-md-12 col-sm-12 col-xs-12">
+          <div class="x_panel">
+             <div class="x_title">
+                <h4 style="text-transform:uppercase;"> <a href="/swarm-services/{{serviceId}}"> {{name}} </a> <span class="label label-{{flag}}" style="color:#FFFFFF">{{label_tsdBlueGreenState}}</span></h4>
+               <div class="clearfix"></div>
+             </div>
+             <div class="x_content">          
+                <table class="table table-striped table-bordered">
+	                <tr>
+	                   <th>Service ID</th><td colspan="5">{{serviceId}}</td>
+	                </tr>
+	                <tr>
+	                    <th>Args</th><td colspan="5">{{taskArgs}}</td>
+	               </tr>
+	               <tr>
+	                    <th>Replicas</th>
+	                    <td colspan="5">
+	                         <a href="" id="rep--{{serviceId}}" data-url="/swarm-services/{{serviceId}}/scale" data-pk="{{serviceId}}" class="replicas" data-title="Enter No. Of Replicas">{{replicas}} <span class="fa fa-pencil"></span></a>         
+	                    </td>
+	               </tr>
+	               <tr>
+                     <th> Actions </th>
+                      <th>Image</th>
+                      <th>Port</th>
+                      <th>Path</th>
+                      <th>Created</th>
+                      <th>Updated</th>     
+                   </tr>
+                   <tr>
+                      <td>
+                         <div style="display:{{liveActionDiv}}">
+                           <form id="goLiveService" action="/swarm-services/{{serviceId}}/golive" method="POST">
+                             <input type="hidden" name="appClusterId" class="form-control" id="appClusterId" value="{{appClusterId}}"/>
+                             <input type="hidden" name="serviceName" class="form-control" id="serviceName" value="{{name}}"/>                
+                             <button type="submit" class="btn btn-block btn-xs btn-success">Go Live</button>
+                           </form>
+                           <form id="deleteRelease" action = "/swarm-services/{{serviceId}}/deleterelease" method="POST">
+                              <input type="hidden" name ="appClusterId" class="form-control" id="appclusterId" value="{{appClusterId}}" />
+                              <button type="submit" class="btn btn-block btn-xs btn-danger">Delete Release</button>
+                           </form>
+                         </div>
+                      </td>   
+                      <td>{{imageDescription}}</td>
+                      <td>{{label_tsdPort}}</td>
+                      <td>{{label_tsdPath}}</td>
+                      <td>{{createdAt}}</td>
+                      <td>{{updatedAt}}</td>
+                   </tr> 
+                </table>               
+             </div>
+             <h5>Service Tasks</h5>
+             <div class="x_content">                
+               <table class="table table-striped table-bordered">
+                  <thead>
+                    <tr>
+                     <th> Task ID </th>
+                      <th>State</th>
+                      <th>Desired State</th>
+                      <th>Published Port</th>
+                      <th>Swarm Cluster ID</th>
+                      <th>Created</th>
+                      <th>Updated</th>
+                      <th>Message</th>     
+                   </tr>
+                   </thead>
+                   <tbody>
+                   {{#serviceTasks}}
+                   <tr>
+                     <td>{{taskId}}</td>
+                     <td>{{state}}</td>
+                     <td>{{desiredState}}</td>
+                     <td>{{containerPort}}</td>
+                     <td>{{swarmClusterId}}</td>
+                     <td>{{createdAt}}</td>
+                     <td>{{updatedAt}}</td>
+                     <td>{{message}}</td>
+                   </tr>
+                   {{/serviceTasks}}
+                   </tbody>
+               </table>               
+             </div>
+          </div>
+       </div>
+       
+
+       {{/dockerServices}}
+       <!-- Each service -->
+    </div>
+  </div>
+</div>
+<!-- /page content -->
+
+<script type="text/javascript">
+	$(document).ready(function() {
+	    $('.replicas').editable({
+			validate: function(value) {
+			    if($.trim(value) == '') {
+			        return 'This field is required and can not be zero or empty';
+			    }
+			}
+	    });
+	});
+</script>
+{{>footer}}
+

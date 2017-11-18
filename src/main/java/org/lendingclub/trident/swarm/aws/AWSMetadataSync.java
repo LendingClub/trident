@@ -88,8 +88,7 @@ public class AWSMetadataSync {
 
 							} else {
 								AmazonAutoScaling asgClient = accountManager
-										.newClientBuilder(account, AmazonAutoScalingClientBuilder.class)
-										.withRegion(region).build();
+										.getClient(account, AmazonAutoScalingClientBuilder.class,region);
 								asgClient.createOrUpdateTags(new CreateOrUpdateTagsRequest().withTags(list));
 							
 							}
@@ -166,7 +165,7 @@ public class AWSMetadataSync {
 				});
 	}
 
-	protected void createMissingDockerSwarmNodes() {
+	public void createMissingDockerSwarmNodes() {
 		// This cypher will find all tridend ASGs that do not have DockerSwarm
 		// nodes. We will will then backfill
 		String cypher = "match (a:AwsAsg)--(x:AwsEc2Instance) OPTIONAL MATCH (a)--(s:DockerSwarm)   "

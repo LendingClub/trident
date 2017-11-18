@@ -35,7 +35,7 @@ if [ "$TSD_CLUSTER" = "" ]; then
 export TSD_CLUSTER=${TSD_ZONE}--${TSD_ENV}--${TSD_SUB_ENV}--${TSD_GROUP}
 fi
 export ENVOY_CFG_URL=${TSD_URL}/api/trident/envoy/config/${TSD_CLUSTER}/${TSD_NODE}
-
+export ENVOY_CFG_BUNDLE_URL=${TSD_URL}/api/trident/envoy/config-bundle/${TSD_CLUSTER}/${TSD_NODE}
 cat <<EOF
 
 ENVOY_HOME    : ${ENVOY_HOME} 
@@ -51,12 +51,13 @@ TSD_URL       : ${TSD_URL}
 
 Discovery URLs
 ---------------
-Config URL              : ${ENVOY_CFG_URL}
-Unified Config          : ${TSD_URL}/api/trident/envoy/unified-config/${TSD_CLUSTER}/${TSD_NODE}
-Listener Discovery URL  : ${TSD_URL}/api/trident/envoy/v1/listeners/${TSD_CLUSTER}/${TSD_NODE}
-Route Discovery URL *   : ${TSD_URL}/api/trident/envoy/v1/routes/<ROUTE_CONFIG_NAME>/${TSD_CLUSTER}/${TSD_NODE}
-Cluster Discovery URL   : ${TSD_URL}/api/trident/envoy/v1/clusters/${TSD_CLUSTER}/${TSD_NODE}
-Service Discovery URL * : ${TSD_URL}/api/trident/envoy/v1/registration/<SERVICE_NAME>
+Config URL               : ${ENVOY_CFG_URL}
+Config Bundle URL        : ${ENVOY_CFG_BUNDLE_URL}
+Config Unified           : ${TSD_URL}/api/trident/envoy/config-unified/${TSD_CLUSTER}/${TSD_NODE}
+Listener Discovery (LDS) : ${TSD_URL}/api/trident/envoy/v1/listeners/${TSD_CLUSTER}/${TSD_NODE}
+Route Discovery    (RDS) : ${TSD_URL}/api/trident/envoy/v1/routes/default/${TSD_CLUSTER}/${TSD_NODE}
+Cluster Discovery  (CDS) : ${TSD_URL}/api/trident/envoy/v1/clusters/${TSD_CLUSTER}/${TSD_NODE}
+Service Discovery  (SDS) : ${TSD_URL}/api/trident/envoy/v1/registration/SERVICE_NAME
 
 NOTE: RDS and SDS URLs are specific to listeners and clusters respectively
 EOF
@@ -68,12 +69,27 @@ mkdir -p ${ENVOY_HOME}/config
 mkdir -p ${ENVOY_HOME}/logs
 
 echo
-echo fetching ${ENVOY_CFG_URL} to ${ENVOY_CFG}
-curl --fail --silent ${ENVOY_CFG_URL} >${ENVOY_CFG} 
+echo fetching ${ENVOY_CFG_BUNDLE_URL} to ${ENVOY_HOME}/config/bundle.zip
+curl --fail --silent ${ENVOY_CFG_BUNDLE_URL} -o ${ENVOY_HOME}/config/bundle.zip
 
 if [ $? -ne 0 ]; then
     echo failed to fetch envoy config
     exit 99
+fi
+
+cd ${ENVOY_HOME}
+unzip ${ENVOY_HOME}/config/bundle.zip
+
+if [ $? -ne 0 ]; then
+    echo error expanding config
+    exit 99
+fi
+
+# We expect certificates in /envoy/config/ca-certificates.crt
+# If Trident didn't give us a bundle with this file, then we just symlink the system
+
+if [ ! -f ${ENVOY_HOME}/config/ca-certificates.crt ]; then
+    ln -sf /etc/ssl/certs/ca-certificates.crt ${ENVOY_HOME}/config/ca-certificates.crt
 fi
 
 echo 
@@ -84,6 +100,8 @@ echo "================="
 echo
 
 nohup ${ENVOY_HOME}/hot-restarter.py ${ENVOY_HOME}/start-envoy.sh 2>&1 >${ENVOY_HOME}/logs/envoy.log &
+
+nohup /envoy/admin-relay daemon >/dev/null 2>&1 &
 
 sleep 5
 

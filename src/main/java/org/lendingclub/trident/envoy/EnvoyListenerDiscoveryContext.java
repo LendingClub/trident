@@ -7,7 +7,7 @@ import org.lendingclub.trident.util.JsonUtil;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 
-public class EnvoyListenerDiscoveryContext extends AbstractEnvoyDiscoveryContext {
+public class EnvoyListenerDiscoveryContext extends EnvoyDiscoveryContext {
 
 	
 

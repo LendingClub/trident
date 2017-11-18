@@ -1,8 +1,6 @@
 package org.lendingclub.trident.event;
 
-import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
@@ -11,18 +9,15 @@ import java.util.concurrent.TimeUnit;
 import javax.annotation.PostConstruct;
 
 import org.lendingclub.neorx.NeoRxClient;
-import org.lendingclub.reflex.concurrent.ConcurrentSubscribers;
 import org.lendingclub.trident.cluster.TridentClusterManager;
 import org.lendingclub.trident.util.JsonUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Strings;
+import com.google.common.base.CaseFormat;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 
 import io.reactivex.functions.Consumer;
@@ -50,19 +45,27 @@ public class Neo4jEventLogWriter {
 		input.path("data").fields().forEachRemaining(it -> {
 			JsonNode val = it.getValue();
 			if (val.isValueNode()) {
-				out.set(it.getKey(), val);
+				out.set(lowerCamelCase(it.getKey()), val);
 			}
 		});
 		input.fields().forEachRemaining(it -> {
 			JsonNode val = it.getValue();
 			if (val.isValueNode()) {
-				out.set(it.getKey(), val);
+				out.set(lowerCamelCase(it.getKey()), val);
 			}
 		});
+		out.put("eventRawData", input.path("data").toString());
 		
 		return out;
 	}
 
+	protected String lowerCamelCase(String str) { 
+		if (str.startsWith("EC2")) { 
+			return str.replace("EC2", "ec2");
+		}
+		return CaseFormat.UPPER_CAMEL.to(CaseFormat.LOWER_CAMEL, str);
+	}
+	
 	class EventLogPurge implements Runnable {
 		@Override
 		public void run() {
@@ -95,22 +98,17 @@ public class Neo4jEventLogWriter {
 			} catch (RuntimeException e) {
 				logger.warn("failed to write event to neo4j", e);
 			}
-
 		}
 	}
 
 	@PostConstruct
 	public void init() {
-
-	
-
 		ThreadFactory tf = new ThreadFactoryBuilder().setNameFormat("Neo4jEventLogWriter-%d").setDaemon(true).build();
 		eventSystem.createConcurrentSubscriber(TridentEvent.class).withExecutor(Executors.newFixedThreadPool(2, tf))
 				.subscribe(new Neo4jWriter());
 
 		// this schedules a periodic purge of the TridentEventLog
 		purgeExecutor.scheduleWithFixedDelay(new EventLogPurge(), 10, 10, TimeUnit.MINUTES);
-
 	}
 
 }

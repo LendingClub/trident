@@ -19,7 +19,6 @@ apply plugin: 'com.github.johnrengelman.shadow'
 
 group 'org.lendingclub.trident'
 mainClassName = 'echo.Main'
-
 // In this section you declare where to find the dependencies of your project
 repositories {
     mavenLocal()

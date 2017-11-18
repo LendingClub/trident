@@ -10,8 +10,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import io.reactivex.schedulers.Schedulers;
 
-
-
 public class Slf4jEventWriter {
 
 	Logger logger = LoggerFactory.getLogger(Slf4jEventWriter.class);
@@ -20,13 +18,13 @@ public class Slf4jEventWriter {
 
 	@PostConstruct
 	public void subscribe() {
-	
-		eventSystem.createConcurrentSubscriber(TridentEvent.class).withScheduler(Schedulers.single()).subscribe(x->{
-			
-	
-			logger.info("logging event:\n {}",JsonUtil.prettyFormat(x.getEnvelope()));
+
+		eventSystem.createConcurrentSubscriber(TridentEvent.class).withScheduler(Schedulers.single()).subscribe(x -> {
+
+			if (logger.isDebugEnabled()) {
+				logger.debug("logging event:\n {}", JsonUtil.prettyFormat(x.getEnvelope()));
+			}
 		});
-		
-		
+
 	}
 }

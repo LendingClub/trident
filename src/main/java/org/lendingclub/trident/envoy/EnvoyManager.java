@@ -1,94 +1,110 @@
 package org.lendingclub.trident.envoy;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 import javax.annotation.PostConstruct;
 
-import org.lendingclub.trident.envoy.swarm.SwarmClusterDiscoveryDecorator;
-import org.lendingclub.trident.envoy.swarm.SwarmListenerDiscoveryDecorator;
-import org.lendingclub.trident.envoy.swarm.SwarmRouteDiscoveryDecorator;
-import org.lendingclub.trident.envoy.swarm.SwarmServiceDiscoveryDecorator;
+import org.lendingclub.neorx.NeoRxClient;
+import org.lendingclub.trident.envoy.swarm.SwarmClusterDiscoveryInterceptor;
+import org.lendingclub.trident.envoy.swarm.SwarmListenerDiscoveryInterceptor;
+import org.lendingclub.trident.envoy.swarm.SwarmRouteDiscoveryInterceptor;
+import org.lendingclub.trident.envoy.swarm.SwarmServiceDiscoveryInterceptor;
+import org.lendingclub.trident.extension.BasicInterceptorGroup;
+import org.lendingclub.trident.extension.InterceptorGroup;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import com.google.common.base.Splitter;
+import com.google.common.hash.Hashing;
 
 @Component
-public class EnvoyManager {
+public class EnvoyManager implements EnvoyInterceptors {
 
-	private List<EnvoyBootstrapConfigDecorator> bootstrapDecorators = new CopyOnWriteArrayList<>();
-	private List<EnvoyServiceDiscoveryDecorator> serviceDiscoveryDecorators = new CopyOnWriteArrayList<>();
-	private List<EnvoyClusterDiscoveryDecorator> clusterDiscoveryDecorators = new CopyOnWriteArrayList<>();
-	private List<EnvoyRouteDiscoveryDecorator> routeDiscoveryDecorators = new CopyOnWriteArrayList<>();
-	private List<EnvoyListenerDiscoveryDecorator> listenerDiscoveryDecorators = new CopyOnWriteArrayList<>();
+	Logger logger = LoggerFactory.getLogger(EnvoyManager.class);
+	
+	
+	private InterceptorGroup<EnvoyBootstrapConfigInterceptor> bootstrapInterceptors = new BasicInterceptorGroup<>();
+	private InterceptorGroup<EnvoyServiceDiscoveryInterceptor> serviceDiscoveryInterceptors = new BasicInterceptorGroup<>();
+	private InterceptorGroup<EnvoyClusterDiscoveryInterceptor> clusterDiscoveryInterceptors = new BasicInterceptorGroup<>();
+	private InterceptorGroup<EnvoyRouteDiscoveryInterceptor> routeDiscoveryInterceptors = new BasicInterceptorGroup<>();
+	private InterceptorGroup<EnvoyListenerDiscoveryInterceptor> listenerDiscoveryInterceptors = new BasicInterceptorGroup<>();
 	
 	@Autowired
-	SwarmClusterDiscoveryDecorator swarmClusterDiscoveryDecorator;
+	SwarmClusterDiscoveryInterceptor swarmClusterDiscoveryInterceptors;
 	
 	@Autowired
-	SwarmServiceDiscoveryDecorator swarmServiceDiscoveryDecorator;
+	SwarmServiceDiscoveryInterceptor swarmServiceDiscoveryInterceptors;
 	
 	@Autowired
-	SwarmListenerDiscoveryDecorator swarmListenerDiscoveryDecorator;
+	SwarmListenerDiscoveryInterceptor swarmListenerDiscoveryDecorator;
 	
 	@Autowired
-	SwarmRouteDiscoveryDecorator swarmRouteDiscoveryDecorator;
+	SwarmRouteDiscoveryInterceptor swarmRouteDiscoveryDecorator;
 	
+	@Autowired NeoRxClient neo4j;
 	
-	public List<EnvoyServiceDiscoveryDecorator> getServiceDiscoveryDecorators() {
-		return serviceDiscoveryDecorators;
+	public InterceptorGroup<EnvoyServiceDiscoveryInterceptor> getServiceDiscoveryInterceptors() {
+		return serviceDiscoveryInterceptors;
 	}
 
-	public List<EnvoyClusterDiscoveryDecorator> getClusterDiscoveryDecorators() {
-		return clusterDiscoveryDecorators;
+	public InterceptorGroup<EnvoyClusterDiscoveryInterceptor> getClusterDiscoveryInterceptors() {
+		return clusterDiscoveryInterceptors;
 	}
-	public List<EnvoyRouteDiscoveryDecorator> getRouteDiscoveryDecorators() {
-		return routeDiscoveryDecorators;
+	public InterceptorGroup<EnvoyRouteDiscoveryInterceptor> getRouteDiscoveryInterceptors() {
+		return routeDiscoveryInterceptors;
 	}
-	public List<EnvoyListenerDiscoveryDecorator> getListenerDiscoveryDecorators() {
-		return listenerDiscoveryDecorators;
+	public InterceptorGroup<EnvoyListenerDiscoveryInterceptor> getListenerDiscoveryInterceptors() {
+		return listenerDiscoveryInterceptors;
 	}
-	public List<EnvoyBootstrapConfigDecorator> getBootstrapDecorators() {
-		return bootstrapDecorators;
+	public InterceptorGroup<EnvoyBootstrapConfigInterceptor> getBootstrapInterceptors() {
+		return bootstrapInterceptors;
 	}
 	
 	@PostConstruct
-	public void setupStandardDecorators() {
-		serviceDiscoveryDecorators.add(swarmServiceDiscoveryDecorator);
-		clusterDiscoveryDecorators.add(swarmClusterDiscoveryDecorator);
-		listenerDiscoveryDecorators.add(swarmListenerDiscoveryDecorator);
-		routeDiscoveryDecorators.add(swarmRouteDiscoveryDecorator);
+	public void setupStandardInterceptors() {
+		serviceDiscoveryInterceptors.getInterceptors().add(swarmServiceDiscoveryInterceptors);
+		clusterDiscoveryInterceptors.getInterceptors().add(swarmClusterDiscoveryInterceptors);
+		listenerDiscoveryInterceptors.getInterceptors().add(swarmListenerDiscoveryDecorator);
+		routeDiscoveryInterceptors.getInterceptors().add(swarmRouteDiscoveryDecorator);
 	}
 	
-	public void decorate(EnvoyServiceDiscoveryContext ctx) {
-		getServiceDiscoveryDecorators().forEach(it -> {
-			it.decorate(ctx);
+	public void invokeInterceptors(EnvoyServiceDiscoveryContext ctx) {
+		getServiceDiscoveryInterceptors().getInterceptors().forEach(it -> {
+			logger.info("invoking interceptor: {}",it);
+			it.accept(ctx);
 		});
 	}
 
-	public void decorate(EnvoyBootstrapConfigContext ctx) {
-		getBootstrapDecorators().forEach(it -> {
-			it.decorate(ctx);
+	public void invokeInterceptors(EnvoyBootstrapConfigContext ctx) {
+		getBootstrapInterceptors().getInterceptors().forEach(it -> {
+			logger.info("invoking interceptor: {}",it);
+			it.accept(ctx);
 		});
 	}
 
-	public void decorate(EnvoyClusterDiscoveryContext ctx) {
-		getClusterDiscoveryDecorators().forEach(it -> {
-			it.decorate(ctx);
+	public void invokeInterceptors(EnvoyClusterDiscoveryContext ctx) {
+		getClusterDiscoveryInterceptors().getInterceptors().forEach(it -> {
+			logger.info("invoking interceptor: {}",it);
+			it.accept(ctx);
 		});
 	}
 
-	public void decorate(EnvoyRouteDiscoveryContext ctx) {
-		getRouteDiscoveryDecorators().forEach(it -> {
-			it.decorate(ctx);
+	public void invokeInterceptors(EnvoyRouteDiscoveryContext ctx) {
+		getRouteDiscoveryInterceptors().getInterceptors().forEach(it -> {
+			logger.info("invoking interceptor: {}",it);
+			it.accept(ctx);
 		});
 	}
 
 	public void decorate(EnvoyListenerDiscoveryContext ctx) {
-		getListenerDiscoveryDecorators().forEach(it -> {
-			it.decorate(ctx);
+		getListenerDiscoveryInterceptors().getInterceptors().forEach(it -> {
+			logger.info("invoking decorator: {}",it);
+			it.accept(ctx);
 		});
 	}
 
@@ -120,5 +136,28 @@ public class EnvoyManager {
 		}
 		return out;
 
+	}
+	
+	public void record(EnvoyDiscoveryContext ctx) {
+		
+		if (ctx instanceof EnvoyListenerDiscoveryContext || ctx instanceof EnvoyClusterDiscoveryContext) {
+			try {
+			String id = String.format("%s__%s__%s__%s__%s",ctx.getServiceZone().get(),ctx.getEnvironment().get(),ctx.getSubEnvironment().orElse("default"),
+					ctx.getServiceCluster().get(),ctx.getServiceNode().get());
+			id = Hashing.sha1().hashBytes(id.getBytes()).toString();
+			
+			neo4j.execCypher("merge (a:EnvoyInstance {id:{id}}) set a.region={region}, a.serviceGroup={serviceGroup}, a.environment={env}, a.subEnvironment={subEnv}, a.node={node}, a.lastContactTs=timestamp(), a.updateTs=timestamp()"
+					,"id",id
+					,"serviceGroup",ctx.getServiceCluster().get()
+					,"region",ctx.getServiceZone().get()
+					,"env",ctx.getEnvironment().get()
+					,"subEnv",ctx.getSubEnvironment().orElse("default")
+					,"node",ctx.getServiceNode().get());
+			}
+			catch (NoSuchElementException e) {
+				
+			}
+			
+		}
 	}
 }

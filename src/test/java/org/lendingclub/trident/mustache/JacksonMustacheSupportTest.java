@@ -1,6 +1,7 @@
 package org.lendingclub.trident.mustache;
 
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 import org.assertj.core.api.Assertions;
@@ -9,10 +10,12 @@ import org.lendingclub.trident.mustache.JacksonMustacheSupport.JacksonFormatter;
 import org.lendingclub.trident.util.JsonUtil;
 import org.rapidoid.u.U;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.MissingNode;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.samskivert.mustache.DefaultCollector;
 import com.samskivert.mustache.Mustache;
@@ -23,7 +26,7 @@ import com.samskivert.mustache.Mustache.VariableFetcher;
 
 public class JacksonMustacheSupportTest {
 
-	Compiler mustache = Mustache.compiler().withFormatter(new JacksonMustacheSupport.JacksonFormatter())
+	Compiler mustache = Mustache.compiler().defaultValue("").withFormatter(new JacksonMustacheSupport.JacksonFormatter())
 			.withCollector(new JacksonMustacheSupport.JacksonCollector(new DefaultCollector())).escapeHTML(false);
 
 	@Test
@@ -38,6 +41,19 @@ public class JacksonMustacheSupportTest {
 				.execute(context)).isEqualTo("what the buzz");
 	}
 
+	@Test
+	public void testEmpty() {
+		List<JsonNode> list = Lists.newArrayList();
+
+		list.add(JsonUtil.createObjectNode().put("a", "world"));
+		list.add(JsonUtil.createObjectNode().put("b", "universe"));
+		
+		Map<String,Object> context = Maps.newConcurrentMap();
+		context.put("x", list);
+
+		Assertions.assertThat(mustache.compile("hello {{#x}}{{#a}}{{this}}{{/a}}{{/x}}")
+				.execute(context)).isEqualTo("hello world");
+	}
 	@Test
 	public void testIt() {
 		ObjectNode n = JsonUtil.getObjectMapper().createObjectNode();
@@ -79,13 +95,14 @@ public class JacksonMustacheSupportTest {
 		n.set("null", null);
 		Map<String, Object> context = U.map("x", n);
 		
-		Assertions.assertThat(mustache.compile("<{{#x}}{{notfound}}{{/x}}>")
-				.execute(context)).isEqualTo("<>");
+	
 		Assertions.assertThat(mustache.compile("<{{#x}}{{missingNode}}{{/x}}>")
 				.execute(context)).isEqualTo("<>");
 		Assertions.assertThat(mustache.compile("<{{#x}}{{nullNode}}{{/x}}>")
 				.execute(context)).isEqualTo("<>");
 		Assertions.assertThat(mustache.compile("<{{#x}}{{null}}{{/x}}>")
+				.execute(context)).isEqualTo("<>");
+		Assertions.assertThat(mustache.compile("<{{#x}}{{notfound}}{{/x}}>")
 				.execute(context)).isEqualTo("<>");
 	}
 	@Test

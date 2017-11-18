@@ -4,14 +4,7 @@
 
 # tracing off
 set +x
-docker swarm init 
-
-# tracing on
-set -x
-
-# Immediately put the manager into draining state
-docker node update --availability drain $(docker node ls | grep '*' | awk '{ print $1 }')
-
+docker swarm init --availability drain --advertise-addr $(netstat -rn | grep ^0.0.0.0 | head -1 | awk {'print $NF'})
 
 # tracing off
 set +x
@@ -34,7 +27,7 @@ curl -s -f -k -X POST {{tridentBaseUrl}}/api/trident/provision/swarm-initialized
  -F "workerTokenOutput=$WORKER_TOKEN_OUTPUT" \
  -F "managerTokenOutput=${MANAGER_TOKEN_OUTPUT}" \
  -F awsInstanceId=${AWS_INSTANCE_ID} \
- -F nodeType={{nodeType}} \
+ -F swarmNodeType={{swarmNodeType}} \
  -F swarmClusterId=${SWARM_CLUSTER_ID} \
  -F swarmNodeId=${SWARM_NODE_ID} \
    >${NEXT_SCRIPT} || exit 99

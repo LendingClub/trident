@@ -2,7 +2,7 @@ package org.lendingclub.trident.swarm.aws;
 
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
-import org.lendingclub.trident.SwarmNodeType;
+import org.lendingclub.trident.swarm.SwarmNodeType;
 import org.lendingclub.trident.swarm.aws.SwarmASGBuilder;
 import org.lendingclub.trident.util.JsonUtil;
 

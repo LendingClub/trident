@@ -27,6 +27,7 @@ public class SwarmDiscoverySearch {
 	public static final String TSD_SUB_ENV = "tsdSubEnv";
 	public static final String TSD_SERVICE_GROUP = "tsdServiceGroup";
 	public static final String TSD_REGION = "tsdRegion";
+	public static final String TSD_PATH = "tsdPath";
 
 	public static final String TSD_APP_ID_LABEL = "label_tsdAppId";
 	public static final String TSD_PORT_LABEL = "label_tsdPort";
@@ -34,7 +35,7 @@ public class SwarmDiscoverySearch {
 	public static final String TSD_SUB_ENV_LABEL = "label_tsdSubEnv";
 	public static final String TSD_SERVICE_GROUP_LABEL = "label_tsdServiceGroup";
 	public static final String TSD_REGION_LABEL = "label_tsdRegion";
-
+	public static final String TSD_PATH_LABEL = "label_tsdPath";
 	NeoRxClient neo4j;
 
 	public SwarmDiscoverySearch(NeoRxClient neo4j) {
@@ -81,6 +82,7 @@ public class SwarmDiscoverySearch {
 			return data.path("swarmName").asText();
 		}
 
+		@Override
 		public JsonNode getData() {
 			return data;
 		}
@@ -89,6 +91,7 @@ public class SwarmDiscoverySearch {
 			return Optional.ofNullable(Strings.emptyToNull(data.path("s").path(n).asText()));
 		}
 
+		@Override
 		public Optional<String> getAppId() {
 			return getOptionalServiceAttribute(TSD_APP_ID_LABEL);
 		}
@@ -125,7 +128,7 @@ public class SwarmDiscoverySearch {
 
 		@Override
 		public List<String> getPaths() {
-			return toList(data.path("s").path(TSD_PORT_LABEL).asText());
+			return toList(data.path("s").path(TSD_PATH_LABEL).asText());
 		}
 
 		@Override
@@ -143,9 +146,10 @@ public class SwarmDiscoverySearch {
 
 		}
 
+		@Override
 		public String toString() {
 			return MoreObjects.toStringHelper(this).add("serviceId", getServiceId())
-					.add("appId", getAppId().orElse(null)).add("port", getPort().orElse(0)).toString();
+			        .add("appId", getAppId().orElse(null)).add("port", getPort().orElse(0)).toString();
 		}
 	}
 
@@ -200,14 +204,14 @@ public class SwarmDiscoverySearch {
 
 		checkThreadViolation();
 		logger.info("----");
-		logger.info("maching {}: env={} subEnv={} region={} serviceGroup={}", service.getServiceId(),
-				service.getEnvironmentSelector(), service.getSubEnvironmentSelector(), service.getRegionSelector(),
-				service.getServiceGroupSelector());
+		logger.info("matching {}: env={} subEnv={} region={} serviceGroup={}", service.getServiceId(),
+		        service.getEnvironmentSelector(), service.getSubEnvironmentSelector(), service.getRegionSelector(),
+		        service.getServiceGroupSelector());
 		boolean b = false;
 		try {
 			b = match(environment, service.getEnvironmentSelector(), "Env") != MatchResult.NONE
-					&& match(serviceGroup, service.getServiceGroupSelector(), "ServiceGroup") != MatchResult.NONE
-					&& match(region, service.getRegionSelector(), "Region") != MatchResult.NONE;
+			        && match(serviceGroup, service.getServiceGroupSelector(), "ServiceGroup") != MatchResult.NONE
+			        && match(region, service.getRegionSelector(), "Region") != MatchResult.NONE;
 
 			MatchResult m = matchSubEnv(subEnvironment, service.getSubEnvironmentSelector(), "SubEnv");
 			b = b && (!m.equals(MatchResult.NONE));
@@ -244,19 +248,25 @@ public class SwarmDiscoverySearch {
 
 	public List<Service> search() {
 
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(this.environment),
+		        "SwarmDiscoverySearch.withEnvironment() not set");
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(this.serviceGroup),
+		        "SwarmDiscoverySearch.withServiceGroup() not set");
+		Preconditions.checkArgument(!Strings.isNullOrEmpty(this.region), "SwarmDiscoverySearch.withRegion() not set");
+
 		checkThreadViolation();
 		List<Service> list = neo4j
-				.execCypher(
-						"match (x:DockerSwarm)--(s:DockerService) return x.name as swarmName, x.swarmClusterId as swarmClusterId,s")
-				.map(it -> {
-					ServiceImpl si = new ServiceImpl();
-					si.data = it;
+		        .execCypher(
+		                "match (x:DockerSwarm)--(s:DockerService) return x.name as swarmName, x.swarmClusterId as swarmClusterId,s")
+		        .map(it -> {
+			        ServiceImpl si = new ServiceImpl();
+			        si.data = it;
 
-					return (Service) si;
-				}).filter(it -> {
+			        return (Service) si;
+		        }).filter(it -> {
 
-					return match(it);
-				}).toList().blockingGet();
+			        return match(it);
+		        }).toList().blockingGet();
 
 		removeShadowedServices(list);
 		return list;
@@ -266,7 +276,7 @@ public class SwarmDiscoverySearch {
 	 * This method takes a list of services and removes services in the default
 	 * sub-environment for which there is a non-default sub-env service that
 	 * shadows it.
-	 * 
+	 *
 	 * @param list
 	 */
 	protected void removeShadowedServices(List<Service> list) {
@@ -278,17 +288,17 @@ public class SwarmDiscoverySearch {
 			ServiceImpl si = ServiceImpl.class.cast(it);
 
 			// create a key to uniquely identify the node...use slashes to make
-			// it obvious that this is slightly different than the double-dash
-			// keys
+		    // it obvious that this is slightly different than the double-dash
+		    // keys
 			String key = si.selectedRegion + "/" + si.selectedEnvironment + "/" + si.selectedSubEnvironment + "/"
-					+ si.selectedAppId;
+		            + si.selectedAppId;
 			map.put(key, it);
 			if (!si.selectedSubEnvironment.equals("default")) {
 				// since this is a subenvironment service, we need to get *rid*
-				// of the corresponding default
-				// So note this key to be removed. We have to go through this
-				// key/map charade because we might not have seen the object
-				// that we're going to remove.
+		        // of the corresponding default
+		        // So note this key to be removed. We have to go through this
+		        // key/map charade because we might not have seen the object
+		        // that we're going to remove.
 				String keyToRemove = si.selectedRegion + "/" + si.selectedEnvironment + "/default/" + si.selectedAppId;
 				keysToRemove.add(keyToRemove);
 			}
@@ -360,7 +370,7 @@ public class SwarmDiscoverySearch {
 
 	/**
 	 * The rules are slightly different for sub-environment matching.
-	 * 
+	 *
 	 * @param input
 	 * @param pattern
 	 * @param context
@@ -377,7 +387,7 @@ public class SwarmDiscoverySearch {
 		try {
 
 			if (Strings.isNullOrEmpty(input)) {
-				return MatchResult.NONE;
+				input = "default";
 			}
 			// If we are in a sub-environment, we pull in all the default
 			// services, and
@@ -398,7 +408,7 @@ public class SwarmDiscoverySearch {
 		} finally {
 
 			logger.info("match(input='{}' pattern='{}' context='{}') => {}", input,
-					Joiner.on(",").join(set.getIncludes()), context, b);
+			        Joiner.on(",").join(set.getIncludes()), context, b);
 		}
 	}
 
@@ -438,18 +448,18 @@ public class SwarmDiscoverySearch {
 			for (String val : vals) {
 				if (!Strings.isNullOrEmpty(val)) {
 					Splitter.on(SwarmDiscoverySearch.delimiter).omitEmptyStrings().trimResults().split(val)
-							.forEach(it -> {
-								if (it.startsWith("!")) {
-									String x = it.substring(1);
-									if (!Strings.isNullOrEmpty(x)) {
-										result.exclusions.add(x.trim());
-									}
-								} else {
-									if (!Strings.isNullOrEmpty(it)) {
-										result.inclusions.add(it.trim());
-									}
-								}
-							});
+					        .forEach(it -> {
+						        if (it.startsWith("!")) {
+							        String x = it.substring(1);
+							        if (!Strings.isNullOrEmpty(x)) {
+								        result.exclusions.add(x.trim());
+							        }
+						        } else {
+							        if (!Strings.isNullOrEmpty(it)) {
+								        result.inclusions.add(it.trim());
+							        }
+						        }
+					        });
 				}
 			}
 		}

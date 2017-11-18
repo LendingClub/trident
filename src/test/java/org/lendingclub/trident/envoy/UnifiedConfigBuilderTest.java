@@ -1,5 +1,7 @@
 package org.lendingclub.trident.envoy;
 
+import java.io.IOException;
+
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.lendingclub.trident.TridentIntegrationTest;
@@ -12,12 +14,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 public class UnifiedConfigBuilderTest extends TridentIntegrationTest {
 
 	@Autowired
-	EnvoyBootstrapController controller;
+	EnvoyDiscoveryController controller;
 	
 	@Test
-	public void testRequest() {
+	public void testRequest() throws IOException {
 		
-		JsonNode n = controller.unifiedConfig(new MockHttpServletRequest(), "zone--test--default--services", "mynode").getBody();
+		JsonNode n = JsonUtil.getObjectMapper().readTree(controller.configUnified(new MockHttpServletRequest(), "zone--test--default--services", "mynode").getBody());
 		JsonUtil.logInfo(getClass(), "test", n);
 		
 		Assertions.assertThat(n.path("cluster_manager").path("clusters").isArray()).isTrue();

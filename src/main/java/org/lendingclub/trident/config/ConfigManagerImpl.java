@@ -22,7 +22,9 @@ import org.springframework.core.env.Environment;
 import org.springframework.core.env.MutablePropertySources;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.MissingNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
@@ -54,16 +56,27 @@ public class ConfigManagerImpl implements ConfigManager {
 
 	}
 
+	public void setValueIfNotSet(String type, String name, String key, String val, boolean encrypt) {
+		JsonNode n = neo4j.execCypher("match (a:Config {type:{type}, name:{name}}) return a","type",type,"name",name).blockingFirst(MissingNode.getInstance());
+		if (n.has(key)) {
+			logger.info("Config type={} name={} key={} already set",type,name,key);
+			return;
+		}
+		setValue(type,name,key, val,encrypt);
+		
+	}
 	public void setValue(String type, String name, String key, String val, boolean encrypt) {
 		ObjectNode props = JsonUtil.getObjectMapper().createObjectNode();
-		props.remove("type");
-		props.remove("name");
+		
 		if (encrypt && !crypto.isEncrypted(val)) {
 			val = crypto.encrypt(val);
 		}
+		Preconditions.checkArgument(!key.equals("type"),"config key 'type' is reserved");
+		Preconditions.checkArgument(!key.equals("name"),"config key 'name' is reserved");
 		props.put(key, val);
 		neo4j.execCypher("merge (a:Config {type:{type}, name:{name}}) set a+={props}, a.updateTs=timestamp()", "type",
 				type, "name", name, "props", props);
+		loadConfig();
 	}
 
 	public Map<String, JsonNode> getConfigOfType(String type) {

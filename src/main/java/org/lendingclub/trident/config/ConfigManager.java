@@ -11,5 +11,6 @@ public interface ConfigManager {
 	public abstract Map<String,JsonNode> getConfigOfType(String type);
 	public abstract Optional<JsonNode> getConfig(String type, String name);	
 	public abstract void setValue(String type, String name, String key, String val, boolean b);
+	public abstract void setValueIfNotSet(String type, String name, String key, String val, boolean b);
 	public void reload();
 }

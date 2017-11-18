@@ -1,0 +1,32 @@
+#!/bin/sh
+
+TSD_URL=${TSD_URL-"https://trident.example.com"}
+TSD_NODE=${TSD_NODE-"$(hostname)"}
+
+ADMIN_URL=${ADMIN_URL-"http://localhost:9901"}
+relay() {
+	ITEM=$1
+	curl --silent ${ADMIN_URL}/${ITEM} | curl --silent -v -d @- -X POST -H "Content-type: text/plain" ${TSD_URL}/api/trident/envoy/admin-relay/${TSD_NODE}/${ITEM}  >/dev/null
+}
+
+relay_all() {
+	relay stats
+	relay server_info
+	relay routes
+	relay listeners
+	relay clusters
+	relay certs	
+}
+
+if [ "$1" = "daemon" ]; then
+	#ps -ef | grep admin-relay | grep -v grep | grep -v $$ | awk '{ print $1 }' | xargs kill -9
+	while [ "true" = "true" ]; do
+		relay_all
+		sleep 60
+	done
+fi
+
+relay_all
+
+
+

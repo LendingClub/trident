@@ -1,6 +1,4 @@
 
-
-
 {{ >header}}
 
 <!-- page content -->
@@ -31,27 +29,27 @@
                         <p class="text-muted font-13 m-b-30">
 
                         </p>
-                        <table id="datatable" class="table table-striped table-bordered">
+                        <table id="datatable" data-order='[[ 2, "desc" ]]' data-page-length="50" class="table table-striped table-bordered">
                             <thead>
                             <tr>
                                 <th>Task Name</th>
                                 <th>Pattern</th>
-                                <th>Submit Time</th>
                                 <th>Start Time</th>
-                                <th>Trident Task ID</th>
-                                <th>Status</th>
 
+                                <th>Execution Time</th>
+                                <th>Status</th>
                             </tr>
                             </thead>
                             <tbody>
                             {{#tasks}}
                             <tr>
-                                <td>{{task}}</td>
-                                <td>{{pattern}}</td>
-                                <td>{{submitTs}}</td>
-                                <td>{{startTs}}</td>
-                                <td>{{tridentTaskId}}</td>
-                                <td>{{enabled}}</td>
+                                <td>{{shortTaskClass}}</td>
+                                <td>{{cronExpression}}</td>
+                                <td>{{startDisplayTime}}</td>
+              
+                                <td>{{executionTimeMillis}}</td>
+                                <td>{{status}}</td>
+                              
                             </tr>
                             {{/tasks}}
                             </tbody>
@@ -59,12 +57,12 @@
                     </div>
                 </div>
             </div>
-
-
         </div>
 
     </div>
+
 </div>
+
 <!-- /page content -->
 
 {{ >footer}}

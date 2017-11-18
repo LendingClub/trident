@@ -3,17 +3,23 @@ package org.lendingclub.trident.provision;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.assertj.core.api.Assertions;
 import org.junit.Test;
-import org.lendingclub.trident.provision.ProvisioningContext;
+import org.lendingclub.trident.TridentIntegrationTest;
+import org.lendingclub.trident.provision.SwarmNodeProvisionContext;
 
 import com.google.common.io.BaseEncoding;
 
-public class AutomationScriptGeneratorTest {
+public class AutomationScriptGeneratorTest extends TridentIntegrationTest {
 
 	@Test
 	public void testIt() {
-		System.out.println(new ProvisioningContext().withTemplateName("docker-install").generateScript());
+		String scriptOutput = new SwarmNodeProvisionContext().withScriptTemplateName("docker-install").generateScript();
 
+		Assertions.assertThat(scriptOutput).contains("export DOCKER_BRIDGE_IP='192.168.127.1/24'");
+		Assertions.assertThat(scriptOutput).contains("export DOCKER_GWBRIDGE_SUBNET='192.168.128.0/24'");
+		Assertions.assertThat(scriptOutput).contains("\"bip\":\"${DOCKER_BRIDGE_IP}\"");
+		System.out.println(scriptOutput);
 	}
 
 	class SwarmInitInfo {

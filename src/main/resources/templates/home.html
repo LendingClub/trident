@@ -3,32 +3,33 @@
 
         <!-- page content -->
         <div class="right_col" role="main">
-          <div class="">
-            <div class="page-title">
-              <div class="title_left">
-                <h3>Trident Dashboard</h3>
-              </div>
-
-
+          
+          <!-- top tiles -->
+          <div class="row tile_count">
+            <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+              <span class="count_top"><i class="fa fa-sitemap"></i>  <a href="/swarm-clusters">Swarms</a></span>
+              <div class="count"><a href="/swarm-clusters">{{swarmCount}}</a></div>
+           
             </div>
-
-            <div class="clearfix"></div>
-
-            <div class="row">
-              <div class="col-md-12 col-sm-12 col-xs-12">
-                <div class="x_panel">
-                  <div class="x_title">
-                    <h2>Dashboard</h2>
-                    
-                    <div class="clearfix"></div>
-                  </div>
-                  <div class="x_content">
-                      To do: Add content to the page ...
-                  </div>
-                </div>
+            <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+              <span class="count_top"><i class="fa fa-life-buoy"></i>  <a href="/swarm-clusters">Swarm Nodes</a></span>
+              <div class="count"><a href="/swarm-clusters">{{swarmNodeCount}}</a></div>
               </div>
-            </div>
+            <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+              <span class="count_top"><i class="fa fa-sun-o"></i>  <a href="/swarm-services">Services</a></span>
+              <div class="count"><a href="/swarm-services">{{serviceCount}}</a></div>
+             </div>
+            <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+              <span class="count_top"><i class="fa fa-tasks"></i>  Containers</span>
+              <div class="count">{{containerCount}}</div>
+             </div>
+            <div class="col-md-2 col-sm-4 col-xs-6 tile_stats_count">
+              <span class="count_top"><i class="fa fa-cubes"></i>  Apps</span>
+              <div class="count"><a href="/app-clusters">{{appsCount}}</a></div>
+             </div>
           </div>
+          <!-- /top tiles -->
+          
         </div>
         <!-- /page content -->
 

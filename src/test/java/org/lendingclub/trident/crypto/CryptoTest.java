@@ -1,5 +1,7 @@
 package org.lendingclub.trident.crypto;
 
+import java.util.Optional;
+
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.slf4j.Logger;

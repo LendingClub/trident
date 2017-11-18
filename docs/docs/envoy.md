@@ -21,17 +21,17 @@ The response will look like:
 {
     "listeners": [],
     "lds": {
-        "cluster": "service_discovery",
+        "cluster": "trident_service_discovery",
         "refresh_delay_ms": 30000
     },
     "admin": {
-        "access_log_path": "/tmp/admin_access.log",
+        "access_log_path": "/envoy/logs/admin_access.log",
         "address": "tcp://127.0.0.1:9901"
     },
     "cluster_manager": {
         "sds": {
             "cluster": {
-                "name": "service_discovery",
+                "name": "trident_service_discovery",
                 "connect_timeout_ms": 250,
                 "type": "strict_dns",
                 "lb_type": "round_robin",
@@ -41,14 +41,14 @@ The response will look like:
                     }
                 ],
                 "ssl_context": {
-                    "ca_cert_file": "/etc/ssl/certs/ca-certificates.crt"
+                    "ca_cert_file": "/envoy/config/ca-certificates.crt"
                 }
             },
             "refresh_delay_ms": 30000
         },
         "cds": {
             "cluster": {
-                "name": "cluster_discovery",
+                "name": "trident_cluster_discovery",
                 "connect_timeout_ms": 250,
                 "type": "strict_dns",
                 "lb_type": "round_robin",
@@ -58,7 +58,7 @@ The response will look like:
                     }
                 ],
                 "ssl_context": {
-                    "ca_cert_file": "/etc/ssl/certs/ca-certificates.crt"
+                    "ca_cert_file": "/envoy/config/ca-certificates.crt"
                 }
             },
             "refresh_delay_ms": 30000
